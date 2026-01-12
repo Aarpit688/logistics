@@ -15,7 +15,7 @@ const FuelSurcharge = () => {
     const fetchFuelSurcharge = async () => {
       try {
         const data = await apiFetch(
-          "http://localhost:5000/api/auth/get-fuel-surcharge"
+          "https://logistics-bnqu.onrender.com/api/auth/get-fuel-surcharge"
         );
 
         const withIds = data.map((item, index) => ({

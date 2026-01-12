@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 
-const API_BASE = "http://localhost:5000/api/admin/fuel-surcharge";
+const API_BASE = "https://logistics-bnqu.onrender.com/api/admin/fuel-surcharge";
 
 const AdminFuelSurcharge = () => {
   const token = localStorage.getItem("adminToken");

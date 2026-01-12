@@ -13,7 +13,7 @@ const AdminMSME = () => {
   const fetchMsmes = async () => {
     try {
       const res = await fetch(
-        `http://localhost:5000/api/admin/msme?search=${search}`,
+        `https://logistics-bnqu.onrender.com/api/admin/msme?search=${search}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

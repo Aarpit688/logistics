@@ -12,13 +12,16 @@ const DocumentReuploadCard = ({ doc, remark, onUploaded }) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(`http://localhost:5000/api/user/documents/${doc}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
+    const res = await fetch(
+      `https://logistics-bnqu.onrender.com/api/user/documents/${doc}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      }
+    );
 
     const data = await res.json();
 

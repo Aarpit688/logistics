@@ -14,7 +14,7 @@ const AdminDashboard = () => {
 
   const fetchUsers = async () => {
     const res = await fetch(
-      `http://localhost:5000/api/admin/users?search=${search}&page=${page}&limit=${limit}`,
+      `https://logistics-bnqu.onrender.com/api/admin/users?search=${search}&page=${page}&limit=${limit}`,
       {
         headers: {
           Authorization: `Bearer ${adminToken}`,

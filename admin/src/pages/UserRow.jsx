@@ -6,20 +6,23 @@ const UserRow = ({ user, refresh }) => {
   const [remarks, setRemarks] = useState(user.documentRemarks || {});
 
   const toggleApproval = async (checked) => {
-    await fetch(`http://localhost:5000/api/admin/users/${user._id}/approval`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${adminToken}`,
-      },
-      body: JSON.stringify({ approved: checked }),
-    });
+    await fetch(
+      `https://logistics-bnqu.onrender.com/api/admin/users/${user._id}/approval`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({ approved: checked }),
+      }
+    );
     refresh();
   };
 
   const saveRemark = async (doc) => {
     await fetch(
-      `http://localhost:5000/api/admin/users/${user._id}/document-remark`,
+      `https://logistics-bnqu.onrender.com/api/admin/users/${user._id}/document-remark`,
       {
         method: "PATCH",
         headers: {
@@ -41,7 +44,7 @@ const UserRow = ({ user, refresh }) => {
     }
 
     const res = await fetch(
-      `http://localhost:5000/api/admin/users/${userId}/account-type`,
+      `https://logistics-bnqu.onrender.com/api/admin/users/${userId}/account-type`,
       {
         method: "PUT",
         headers: {
@@ -152,7 +155,7 @@ const UserRow = ({ user, refresh }) => {
                           <span className="font-medium uppercase">{doc}</span>
 
                           <a
-                            href={`http://localhost:5000/${file}`}
+                            href={`https://logistics-bnqu.onrender.com/${file}`}
                             target="_blank"
                             rel="noreferrer"
                             className="text-blue-600 underline"

@@ -37,7 +37,7 @@ const Profile = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch("http://localhost:5000/api/auth/me", {
+      await fetch("https://logistics-bnqu.onrender.com/api/auth/me", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
