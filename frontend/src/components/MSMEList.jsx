@@ -4,7 +4,7 @@ import { saveAs } from "file-saver";
 import MSMERegistration from "./MSMERegistration";
 import { FileText } from "lucide-react";
 
-const BASE_URL = "http://localhost:5000";
+const BASE_URL = "https://logistics-bnqu.onrender.com";
 
 const MSMEList = () => {
   const [data, setData] = useState([]);
@@ -19,11 +19,14 @@ const MSMEList = () => {
   ============================ */
   const fetchMsmes = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/auth/msme", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await fetch(
+        "https://logistics-bnqu.onrender.com/api/auth/msme",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       if (!res.ok) {
         throw new Error("Failed to fetch MSMEs");

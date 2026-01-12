@@ -99,13 +99,16 @@ const MSMERegistration = ({ onBack }) => {
     formData.append("stamp", files.authFile);
 
     try {
-      const res = await fetch("http://localhost:5000/api/auth/msme", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      const res = await fetch(
+        "https://logistics-bnqu.onrender.com/api/auth/msme",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
 
       if (!res.ok) throw new Error("Failed");
 

@@ -19,9 +19,12 @@ const AppLayout = () => {
         return;
       }
 
-      const res = await fetch("http://localhost:5000/api/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        "https://logistics-bnqu.onrender.com/api/auth/me",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       // 🔥 handle 401/403 explicitly
       if (!res.ok) {
