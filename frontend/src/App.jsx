@@ -11,6 +11,8 @@ import FuelSurcharge from "./pages/FuelSurcharge";
 import MSMEDhl from "./pages/MSMEDhl";
 import VolumetricWeightCalculator from "./pages/VolumetricWeightCalculator";
 import AuthRoute from "./routes/AuthRoute";
+import RateCalculator from "./pages/RateCalculator";
+import SpotPricing from "./pages/SpotPricing";
 
 const App = () => {
   return (
@@ -55,12 +57,14 @@ const App = () => {
           <Route path="/dashboard" element={<DashboardHome />} />
           <Route path="/dashboard/profile" element={<Profile />} />
           <Route path="/fuel-surcharge" element={<FuelSurcharge />} />
+          <Route path="/rate-calculator" element={<RateCalculator />} />
           <Route path="/book-shipment" element={<BookShipment />} />
           <Route path="/msme-dhl" element={<MSMEDhl />} />
           <Route
             path="/volumetric-weight-calculator"
             element={<VolumetricWeightCalculator />}
           />
+          <Route path="/spot-pricing-enquiry" element={<SpotPricing />} />
         </Route>
       </Routes>
     </Router>

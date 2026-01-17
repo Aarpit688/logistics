@@ -261,7 +261,10 @@ const WeightCalculator = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 mt-14 items-center">
+    <div className="flex flex-col gap-6 mt-4 items-center">
+      <h1 className="mb-10 text-4xl font-semibold">
+        Volumetric Weight Calculator
+      </h1>
       <div className="flex md:flex-row flex-col justify-center items-center gap-2 md:gap-5">
         <WeightCalculatorDropdown
           options={shippingModes}
