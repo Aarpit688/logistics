@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { MapPin, Map, Package, ChevronDown } from "lucide-react";
 
 // ✅ India Post API
@@ -53,6 +53,14 @@ export default function BookShipmentDomesticStep1({
       },
     });
   };
+
+  // ✅ IMPORTANT: default shipmentType in payload on page load
+  useEffect(() => {
+    if (!shipment.shipmentType) {
+      patchShipment({ shipmentType: "Document" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ✅ Origin pincode autofill
   const validateOriginOnBlur = async () => {

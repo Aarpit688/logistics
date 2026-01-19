@@ -1,5 +1,6 @@
 import BookShipmentDomesticStep1 from "./BookShipmentDomesticStep1";
 import BookShipmentDomesticStep2 from "./BookShipmentDomesticStep2";
+import BookShipmentDomesticStep3 from "./BookShipmentDomesticStep3";
 
 export default function BookShipmentDomestic({
   step,
@@ -29,5 +30,15 @@ export default function BookShipmentDomestic({
     );
   }
 
+  if (step === 3) {
+    return (
+      <BookShipmentDomesticStep3
+        data={data}
+        onChange={onChange}
+        onNext={onNext}
+        onBack={onBack}
+      />
+    );
+  }
   return <div>Step {step} coming soon...</div>;
 }
