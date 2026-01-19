@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { API_BASE_URL } from "../../config/api";
 
 const AdminMSME = () => {
   const [msmes, setMsmes] = useState([]);
@@ -13,12 +14,12 @@ const AdminMSME = () => {
   const fetchMsmes = async () => {
     try {
       const res = await fetch(
-        `https://logistics-bnqu.onrender.com/api/admin/msme?search=${search}`,
+        `${API_BASE_URL}/api/admin/msme?search=${search}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       if (!res.ok) {
@@ -43,7 +44,7 @@ const AdminMSME = () => {
   ============================ */
   const updateStatus = async (id, status) => {
     try {
-      await fetch(`http://localhost:5000/api/admin/msme/${id}/status`, {
+      await fetch(`${API_BASE_URL}/api/admin/msme/${id}/status`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -142,8 +143,8 @@ const AdminMSME = () => {
                       m.status === "APPROVED"
                         ? "text-green-600"
                         : m.status === "REJECTED"
-                        ? "text-red-600"
-                        : "text-gray-600"
+                          ? "text-red-600"
+                          : "text-gray-600"
                     }`}
                   >
                     {m.status}
@@ -156,14 +157,14 @@ const AdminMSME = () => {
                         path && (
                           <a
                             key={key}
-                            href={`http://localhost:5000/${path}`}
+                            href={`${API_BASE_URL}/${path}`}
                             target="_blank"
                             rel="noreferrer"
                             className="text-blue-600 underline block"
                           >
                             {key.toUpperCase()}
                           </a>
-                        )
+                        ),
                     )}
                   </td>
 

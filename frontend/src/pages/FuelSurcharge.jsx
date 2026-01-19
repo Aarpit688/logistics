@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { apiFetch } from "../utils/apiFetch";
+import { API_BASE_URL } from "../config/api";
 
 const FuelSurcharge = () => {
   const [fuelData, setFuelData] = useState([]);
@@ -15,7 +16,7 @@ const FuelSurcharge = () => {
     const fetchFuelSurcharge = async () => {
       try {
         const data = await apiFetch(
-          "https://logistics-bnqu.onrender.com/api/auth/get-fuel-surcharge"
+          `${API_BASE_URL}/api/auth/get-fuel-surcharge`,
         );
 
         const withIds = data.map((item, index) => ({

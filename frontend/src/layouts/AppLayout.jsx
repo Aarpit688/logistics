@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
+import { API_BASE_URL } from "../config/api";
 
 const AppLayout = () => {
   const navigate = useNavigate();
@@ -19,12 +20,9 @@ const AppLayout = () => {
         return;
       }
 
-      const res = await fetch(
-        "https://logistics-bnqu.onrender.com/api/auth/me",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       // 🔥 handle 401/403 explicitly
       if (!res.ok) {

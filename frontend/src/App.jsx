@@ -13,6 +13,7 @@ import VolumetricWeightCalculator from "./pages/VolumetricWeightCalculator";
 import AuthRoute from "./routes/AuthRoute";
 import RateCalculator from "./pages/RateCalculator";
 import SpotPricing from "./pages/SpotPricing";
+import SpotPricingList from "./pages/SpotPricingList";
 
 const App = () => {
   return (
@@ -65,6 +66,7 @@ const App = () => {
             element={<VolumetricWeightCalculator />}
           />
           <Route path="/spot-pricing-enquiry" element={<SpotPricing />} />
+          <Route path="/spot-pricing-list" element={<SpotPricingList />} />
         </Route>
       </Routes>
     </Router>

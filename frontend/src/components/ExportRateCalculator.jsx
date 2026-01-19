@@ -1,13 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  MapPin,
-  Map,
-  Package,
-  Scale,
-  ChevronDown,
-  ChevronsRight,
-  Boxes,
-} from "lucide-react";
+import { MapPin, Map, Package, Scale, ChevronDown, Boxes } from "lucide-react";
 
 // ✅ India Post API
 async function fetchPincodeDetails(pincode) {
@@ -153,6 +145,17 @@ export default function ExportRateCalculator({
   const isNonDoc = shipmentType === "Non-Document";
   const isDoc = shipmentType === "Document";
 
+  // ✅ TOTAL WEIGHT for Non-Doc = sum(qty * row.weight)
+  const totalWeightNonDoc = useMemo(() => {
+    return boxRows.reduce((sum, r) => {
+      const qty = Number(r.qty || 0);
+      const wt = Number(r.weight || 0);
+      if (Number.isNaN(qty) || Number.isNaN(wt)) return sum;
+      return sum + qty * wt;
+    }, 0);
+  }, [boxRows]);
+
+  // ✅ Load countries
   useEffect(() => {
     let cancelled = false;
 
@@ -161,7 +164,7 @@ export default function ExportRateCalculator({
         setCountriesLoading(true);
 
         const res = await fetch(
-          "https://restcountries.com/v3.1/all?fields=name,cca2"
+          "https://restcountries.com/v3.1/all?fields=name,cca2",
         );
         const data = await res.json();
 
@@ -200,11 +203,9 @@ export default function ExportRateCalculator({
   // when switching shipment type, reset irrelevant states
   useEffect(() => {
     if (shipmentType === "Document") {
-      // reset non-doc fields
       setBoxesCount("");
       setBoxRows([]);
     } else if (shipmentType === "Non-Document") {
-      // reset doc field
       setWeight("");
     }
   }, [shipmentType]);
@@ -244,38 +245,55 @@ export default function ExportRateCalculator({
     }
   };
 
+  const validateDestOnBlur = async () => {
+    setDestTouched(true);
+
+    if (!destPincode) {
+      setDestError("Required");
+      return;
+    }
+    setDestError("");
+  };
+
   const validateForm = () => {
     const missing = {};
 
     // required always
     if (!originPincode) missing.originPincode = true;
+    if (!destinationCountry) missing.destinationCountry = true;
     if (!destPincode) missing.destPincode = true;
     if (!shipmentType) missing.shipmentType = true;
-    if (!destinationCountry) missing.destinationCountry = true;
 
-    // doc/non-doc required fields
     if (shipmentType === "Document") {
-      if (!weight) missing.weight = true;
+      if (!weight || Number(weight) <= 0) missing.weight = true;
     }
 
     if (shipmentType === "Non-Document") {
-      if (!boxesCount || Number(boxesCount) < 1) missing.boxesCount = true;
-
-      // if boxes exist, validate rows
       const count = clampInt(boxesCount || 0, 0, 9999);
+      const totWt = Number(totalWeightNonDoc);
+
+      if (!boxesCount || Number.isNaN(count) || count < 1)
+        missing.boxesCount = true;
+
+      if (!totWt || Number.isNaN(totWt) || totWt <= 0)
+        missing.totalWeightNonDoc = true;
+
       if (count > 0) {
         boxRows.forEach((r, idx) => {
-          if (!r.weight) missing[`row_${idx}_weight`] = true;
-          if (!r.length) missing[`row_${idx}_length`] = true;
-          if (!r.breadth) missing[`row_${idx}_breadth`] = true;
-          if (!r.height) missing[`row_${idx}_height`] = true;
+          if (!r.weight || Number(r.weight) <= 0)
+            missing[`row_${idx}_weight`] = true;
+          if (!r.length || Number(r.length) <= 0)
+            missing[`row_${idx}_length`] = true;
+          if (!r.breadth || Number(r.breadth) <= 0)
+            missing[`row_${idx}_breadth`] = true;
+          if (!r.height || Number(r.height) <= 0)
+            missing[`row_${idx}_height`] = true;
         });
       }
     }
 
     setMissingFields(missing);
 
-    // any missing?
     if (Object.keys(missing).length > 0) {
       setFormError("All fields are required");
       return false;
@@ -285,17 +303,6 @@ export default function ExportRateCalculator({
     return true;
   };
 
-  const validateDestOnBlur = async () => {
-    setDestTouched(true);
-
-    if (!destPincode) {
-      setDestError("Required");
-      return;
-    }
-
-    setDestError("");
-  };
-
   const handleReset = () => {
     setOriginPincode("");
     setDestPincode("");
@@ -303,10 +310,6 @@ export default function ExportRateCalculator({
     setWeight("");
 
     setDestinationCountry("");
-    setDestPincode("");
-    setDestLoc(null);
-    setDestError("");
-    setDestTouched(false);
 
     setBoxesCount("");
     setBoxRows([]);
@@ -326,7 +329,6 @@ export default function ExportRateCalculator({
     onResetAll?.();
   };
 
-  // ✅ Change quantity logic: sum must stay = boxesCount
   const handleQtyChange = (rowIndex, nextQtyRaw) => {
     const count = clampInt(boxesCount || 0, 0, 9999);
     if (count < 1) return;
@@ -335,14 +337,10 @@ export default function ExportRateCalculator({
       let rows = normalizeRowsToBoxes(prev, count);
       if (!rows[rowIndex]) return rows;
 
-      // desired qty
       let nextQty = clampInt(nextQtyRaw, 1, 999999);
       rows[rowIndex].qty = nextQty;
 
-      // normalize again so total qty becomes count
       rows = normalizeRowsToBoxes(rows, count);
-
-      // Ensure the edited row doesn't get deleted (edge case)
       if (!rows[rowIndex]) return rows;
 
       return rows;
@@ -362,15 +360,34 @@ export default function ExportRateCalculator({
     const ok = validateForm();
     if (!ok) return;
 
-    // ✅ Example computed rates
     const computedRates = [
       {
         carrier: "sKart Domestic North",
         serviceName: "Standard",
         productType: "VENP160",
-        cost: 44,
-        tatDays: 0,
-        chargeableWeight: Number(weight || 1).toFixed(2),
+        cost: 48,
+        tatDays: 5,
+        chargeableWeight: isNonDoc
+          ? totalWeightNonDoc.toFixed(2)
+          : Number(weight || 1).toFixed(2),
+        breakup: [
+          { label: "FUEL SURCHARGE", amount: 8 },
+          { label: "FREIGHT", amount: 40 },
+        ],
+      },
+      {
+        carrier: "sKart Domestic North",
+        serviceName: "Express",
+        productType: "VENP200",
+        cost: 90,
+        tatDays: 2,
+        chargeableWeight: isNonDoc
+          ? totalWeightNonDoc.toFixed(2)
+          : Number(weight || 1).toFixed(2),
+        breakup: [
+          { label: "FUEL SURCHARGE", amount: 4 },
+          { label: "FREIGHT", amount: 40 },
+        ],
       },
       {
         carrier: "BlueDart Surface",
@@ -378,16 +395,43 @@ export default function ExportRateCalculator({
         productType: "SURF",
         cost: 62,
         tatDays: 2,
-        chargeableWeight: Number(weight || 1).toFixed(2),
+        chargeableWeight: isNonDoc
+          ? totalWeightNonDoc.toFixed(2)
+          : Number(weight || 1).toFixed(2),
       },
     ];
 
-    onRatesCalculated?.(computedRates, {
-      origin: originPincode,
-      destination: destPincode,
+    const metaPayload = {
+      calculatorType: "export",
+
       shipmentType,
+
+      originCountry,
       destinationCountry,
-    });
+
+      originPincode,
+      originLoc,
+
+      destZipcode: destPincode,
+      destLoc,
+
+      // doc
+      weight,
+
+      // non-doc
+      boxesCount,
+      boxRows,
+      totalWeightNonDoc: totalWeightNonDoc.toFixed(2),
+
+      // derived
+      chargeableWeight: isNonDoc
+        ? totalWeightNonDoc.toFixed(2)
+        : Number(weight || 1).toFixed(2),
+
+      createdAt: new Date().toISOString(),
+    };
+
+    onRatesCalculated?.(computedRates, metaPayload);
   };
 
   return (
@@ -399,7 +443,6 @@ export default function ExportRateCalculator({
           label="ORIGIN COUNTRY"
           required
           icon={<Map className="h-4 w-4 text-[#6b7280]" />}
-          hint="Fixed to India"
           hintType="success"
         >
           <div className="relative w-full">
@@ -408,8 +451,6 @@ export default function ExportRateCalculator({
               disabled
               className="h-11 w-full px-4 text-sm font-extrabold text-[#111827] bg-gray-50 outline-none cursor-not-allowed"
             />
-
-            {/* right icon */}
             <div className="pointer-events-none absolute right-0 top-0 h-full flex items-center">
               <div className="mr-3 grid h-8 w-8 place-items-center rounded-lg">
                 <ChevronDown className="h-4 w-4 text-gray-400" />
@@ -418,6 +459,7 @@ export default function ExportRateCalculator({
           </div>
         </Field>
 
+        {/* ORIGIN PINCODE */}
         <Field
           label="ORIGIN PINCODE"
           required
@@ -428,11 +470,21 @@ export default function ExportRateCalculator({
               ? originLoading
                 ? "Validating..."
                 : originError
-                ? originError
-                : ""
+                  ? originError
+                  : originLoc
+                    ? `${originLoc.city}, ${originLoc.state}`
+                    : ""
               : ""
           }
-          hintType={originError ? "error" : "muted"}
+          hintType={
+            originTouched
+              ? originError
+                ? "error"
+                : originLoc
+                  ? "success"
+                  : "muted"
+              : "muted"
+          }
         >
           <input
             type="text"
@@ -450,7 +502,7 @@ export default function ExportRateCalculator({
           />
         </Field>
 
-        {/* ✅ Destination Country (NEW) */}
+        {/* ✅ Destination Country */}
         <Field
           label="DESTINATION COUNTRY"
           required
@@ -469,7 +521,6 @@ export default function ExportRateCalculator({
                   destinationCountry: false,
                 }));
 
-                // once country changes reset destination pincode
                 setDestPincode("");
                 setDestLoc(null);
                 setDestError("");
@@ -500,22 +551,14 @@ export default function ExportRateCalculator({
           </div>
         </Field>
 
-        {/* ✅ Destination Pincode (Hidden until country selected) */}
+        {/* ✅ DESTINATION ZIP */}
         {destinationCountry ? (
           <Field
             label="DESTINATION ZIPCODE"
             required
             invalid={missingFields.destPincode}
             icon={<Map className="h-4 w-4 text-[#6b7280]" />}
-            hint={
-              destTouched
-                ? destLoading
-                  ? "Validating..."
-                  : destError
-                  ? destError
-                  : ""
-                : ""
-            }
+            hint={destTouched ? destError : ""}
             hintType={destError ? "error" : "muted"}
           >
             <input
@@ -543,7 +586,6 @@ export default function ExportRateCalculator({
           icon={<Package className="h-4 w-4 text-[#6b7280]" />}
         >
           <div className="relative w-full">
-            <div className="absolute inset-0 rounded-none opacity-60" />
             <select
               value={shipmentType}
               onChange={(e) => setShipmentType(e.target.value)}
@@ -586,7 +628,7 @@ export default function ExportRateCalculator({
           </Field>
         ) : isNonDoc ? (
           <Field
-            label="NUMBER OF BOXES  "
+            label="NUMBER OF BOXES"
             required
             invalid={missingFields.boxesCount}
             icon={<Boxes className="h-4 w-4 text-[#6b7280]" />}
@@ -597,14 +639,14 @@ export default function ExportRateCalculator({
               value={boxesCount}
               onChange={(e) => {
                 const v = e.target.value;
-                setBoxesCount(v);
+                const n = clampInt(v || 0, 0, 9999);
+                setBoxesCount(n === 0 ? "" : String(n));
               }}
               placeholder="Enter number of boxes"
               className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
             />
           </Field>
         ) : (
-          // if shipmentType not selected, keep same layout
           <Field
             label="WEIGHT (kg)"
             required
@@ -622,7 +664,7 @@ export default function ExportRateCalculator({
         )}
       </div>
 
-      {/* ✅ Non-doc rows (minimal) */}
+      {/* ✅ Non-doc rows */}
       {isNonDoc && clampInt(boxesCount || 0, 0, 9999) > 0 ? (
         <div className="mt-4 space-y-3">
           {boxRows.map((row, idx) => (
@@ -631,7 +673,6 @@ export default function ExportRateCalculator({
               className="rounded-md border border-[#e5e7eb] bg-white p-3"
             >
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {/* Qty */}
                 <MiniInput
                   label="Qty"
                   type="number"
@@ -640,7 +681,6 @@ export default function ExportRateCalculator({
                   onChange={(e) => handleQtyChange(idx, e.target.value)}
                 />
 
-                {/* Weight */}
                 <MiniInput
                   label="Weight (kg)"
                   type="number"
@@ -653,7 +693,6 @@ export default function ExportRateCalculator({
                   }
                 />
 
-                {/* Length */}
                 <MiniInput
                   label="Length (cm)"
                   type="number"
@@ -666,7 +705,6 @@ export default function ExportRateCalculator({
                   }
                 />
 
-                {/* Breadth */}
                 <MiniInput
                   label="Breadth (cm)"
                   type="number"
@@ -679,7 +717,6 @@ export default function ExportRateCalculator({
                   }
                 />
 
-                {/* Height */}
                 <MiniInput
                   label="Height (cm)"
                   type="number"
@@ -715,6 +752,7 @@ export default function ExportRateCalculator({
           Get Quotation
         </button>
       </div>
+
       {formError ? (
         <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-extrabold text-red-700 tracking-wider">
           {formError}
@@ -724,16 +762,6 @@ export default function ExportRateCalculator({
       <p className="mt-4 text-xs text-gray-500">
         Tip: Enter correct pincode to avoid ODA surprises.
       </p>
-
-      <style>{`
-        @keyframes slideRight {
-          0%   { transform: translateX(-16px); opacity: 0.4; }
-          20%  { opacity: 1; }
-          50%  { transform: translateX(0px);  opacity: 1; }
-          80%  { opacity: 1; }
-          100% { transform: translateX(16px); opacity: 0.4; }
-        }
-      `}</style>
     </>
   );
 }
@@ -751,17 +779,15 @@ function Field({
     hintType === "error"
       ? "text-red-600"
       : hintType === "success"
-      ? "text-emerald-700"
-      : "text-gray-500";
+        ? "text-emerald-700"
+        : "text-gray-500";
 
   return (
     <div>
-      {/* ✅ Label row (no hint here, so it won't shift) */}
       <label className="block text-sm font-bold text-[#111827] tracking-wide">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
 
-      {/* ✅ Input box */}
       <div
         className={[
           "mt-2 flex items-center overflow-hidden rounded-md bg-white shadow-sm",
@@ -781,11 +807,9 @@ function Field({
         {children}
       </div>
 
-      {/* ✅ Hint / Error BELOW field (no shifting) */}
       {hint ? (
         <p className={`mt-2 text-[11px] font-bold ${hintClass}`}>{hint}</p>
       ) : (
-        // keeps spacing consistent even when no hint
         <div className="mt-2 h-[14px]" />
       )}
     </div>

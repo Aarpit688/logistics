@@ -1,13 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  MapPin,
-  Map,
-  Package,
-  Scale,
-  ChevronDown,
-  ChevronsRight,
-  Boxes,
-} from "lucide-react";
+import { MapPin, Map, Package, Scale, ChevronDown, Boxes } from "lucide-react";
 
 // ✅ India Post API
 async function fetchPincodeDetails(pincode) {
@@ -48,12 +40,10 @@ function normalizeRowsToBoxes(rows, boxesCount) {
     height: r.height ?? "",
   }));
 
-  // If boxesCount is empty/0: return empty list
   if (!boxesCount || boxesCount < 1) return [];
 
   let total = safe.reduce((acc, r) => acc + r.qty, 0);
 
-  // If total qty is 0 or rows empty -> start from scratch
   if (safe.length === 0 || total === 0) {
     return Array.from({ length: boxesCount }, () => ({
       qty: 1,
@@ -64,13 +54,11 @@ function normalizeRowsToBoxes(rows, boxesCount) {
     }));
   }
 
-  // If total < boxesCount -> add qty=1 rows until equals
   while (total < boxesCount) {
     safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
     total += 1;
   }
 
-  // If total > boxesCount -> reduce qty from end
   while (total > boxesCount && safe.length > 0) {
     const last = safe[safe.length - 1];
     const canReduce = last.qty - 1;
@@ -79,16 +67,13 @@ function normalizeRowsToBoxes(rows, boxesCount) {
       last.qty -= 1;
       total -= 1;
     } else {
-      // qty == 1, remove the row
       safe.pop();
       total -= 1;
     }
   }
 
-  // Ensure no row has qty < 1
   for (const r of safe) r.qty = Math.max(1, r.qty);
 
-  // After reduction, may still have total < boxesCount (rare). Fill again.
   total = safe.reduce((acc, r) => acc + r.qty, 0);
   while (total < boxesCount) {
     safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
@@ -127,6 +112,7 @@ export default function DomesticRateCalculator({
   const [weight, setWeight] = useState("");
 
   // ✅ Non-doc states
+  const [shipmentValue, setShipmentValue] = useState(""); // ✅ NEW
   const [boxesCount, setBoxesCount] = useState("");
   const [boxRows, setBoxRows] = useState([]);
 
@@ -148,6 +134,16 @@ export default function DomesticRateCalculator({
   const isNonDoc = shipmentType === "Non-Document";
   const isDoc = shipmentType === "Document";
 
+  // ✅ TOTAL WEIGHT for Non-Doc = sum(qty * row.weight)
+  const totalWeightNonDoc = useMemo(() => {
+    return boxRows.reduce((sum, r) => {
+      const qty = Number(r.qty || 0);
+      const wt = Number(r.weight || 0);
+      if (Number.isNaN(qty) || Number.isNaN(wt)) return sum;
+      return sum + qty * wt;
+    }, 0);
+  }, [boxRows]);
+
   // ✅ keep boxRows normalized whenever boxesCount changes (non-doc only)
   useEffect(() => {
     if (!isNonDoc) return;
@@ -160,6 +156,7 @@ export default function DomesticRateCalculator({
   useEffect(() => {
     if (shipmentType === "Document") {
       // reset non-doc fields
+      setShipmentValue("");
       setBoxesCount("");
       setBoxRows([]);
     } else if (shipmentType === "Non-Document") {
@@ -211,29 +208,44 @@ export default function DomesticRateCalculator({
     if (!destPincode) missing.destPincode = true;
     if (!shipmentType) missing.shipmentType = true;
 
-    // doc/non-doc required fields
+    // doc required
     if (shipmentType === "Document") {
       if (!weight) missing.weight = true;
     }
 
+    // non-doc required
     if (shipmentType === "Non-Document") {
-      if (!boxesCount || Number(boxesCount) < 1) missing.boxesCount = true;
-
-      // if boxes exist, validate rows
+      const shipVal = Number(shipmentValue);
       const count = clampInt(boxesCount || 0, 0, 9999);
+      const totWt = Number(totalWeightNonDoc);
+
+      // shipment value must be > 0
+      if (!shipmentValue || Number.isNaN(shipVal) || shipVal <= 0)
+        missing.shipmentValue = true;
+
+      if (!boxesCount || Number.isNaN(count) || count <= 0)
+        missing.boxesCount = true;
+
+      // total weight must be > 0
+      if (!totWt || Number.isNaN(totWt) || totWt <= 0)
+        missing.totalWeightNonDoc = true;
+
       if (count > 0) {
         boxRows.forEach((r, idx) => {
-          if (!r.weight) missing[`row_${idx}_weight`] = true;
-          if (!r.length) missing[`row_${idx}_length`] = true;
-          if (!r.breadth) missing[`row_${idx}_breadth`] = true;
-          if (!r.height) missing[`row_${idx}_height`] = true;
+          if (!r.weight || Number(r.weight) <= 0)
+            missing[`row_${idx}_weight`] = true;
+          if (!r.length || Number(r.length) <= 0)
+            missing[`row_${idx}_length`] = true;
+          if (!r.breadth || Number(r.breadth) <= 0)
+            missing[`row_${idx}_breadth`] = true;
+          if (!r.height || Number(r.height) <= 0)
+            missing[`row_${idx}_height`] = true;
         });
       }
     }
 
     setMissingFields(missing);
 
-    // any missing?
     if (Object.keys(missing).length > 0) {
       setFormError("All fields are required");
       return false;
@@ -284,6 +296,7 @@ export default function DomesticRateCalculator({
     setShipmentType("");
     setWeight("");
 
+    setShipmentValue(""); // ✅ NEW
     setBoxesCount("");
     setBoxRows([]);
 
@@ -302,15 +315,6 @@ export default function DomesticRateCalculator({
     onResetAll?.();
   };
 
-  const showRoute =
-    originLoc?.city &&
-    originLoc?.state &&
-    destLoc?.city &&
-    destLoc?.state &&
-    !originError &&
-    !destError;
-
-  // ✅ Change quantity logic: sum must stay = boxesCount
   const handleQtyChange = (rowIndex, nextQtyRaw) => {
     const count = clampInt(boxesCount || 0, 0, 9999);
     if (count < 1) return;
@@ -319,14 +323,10 @@ export default function DomesticRateCalculator({
       let rows = normalizeRowsToBoxes(prev, count);
       if (!rows[rowIndex]) return rows;
 
-      // desired qty
       let nextQty = clampInt(nextQtyRaw, 1, 999999);
       rows[rowIndex].qty = nextQty;
 
-      // normalize again so total qty becomes count
       rows = normalizeRowsToBoxes(rows, count);
-
-      // Ensure the edited row doesn't get deleted (edge case)
       if (!rows[rowIndex]) return rows;
 
       return rows;
@@ -346,31 +346,58 @@ export default function DomesticRateCalculator({
     const ok = validateForm();
     if (!ok) return;
 
-    // ✅ Example computed rates
     const computedRates = [
       {
-        carrier: "sKart Domestic North",
+        carrier: "Ace Global Logistics",
         serviceName: "Standard",
         productType: "VENP160",
         cost: 44,
-        tatDays: 0,
-        chargeableWeight: Number(weight || 1).toFixed(2),
-      },
-      {
-        carrier: "BlueDart Surface",
-        serviceName: "Surface",
-        productType: "SURF",
-        cost: 62,
         tatDays: 2,
-        chargeableWeight: Number(weight || 1).toFixed(2),
+        chargeableWeight: isNonDoc
+          ? totalWeightNonDoc.toFixed(2)
+          : Number(weight || 1).toFixed(2),
+
+        // ✅ OPTIONAL: include breakup if you want
+        breakup: [
+          { label: "FUEL SURCHARGE", amount: 8 },
+          { label: "FREIGHT", amount: 36 },
+        ],
       },
     ];
 
-    onRatesCalculated?.(computedRates, {
-      origin: originPincode,
-      destination: destPincode,
+    // ✅ IMPORTANT: Full meta payload (for BookShipment prefill)
+    const metaPayload = {
+      calculatorType: "domestic",
+
       shipmentType,
-    });
+
+      // ✅ Origin
+      originPincode,
+      originLoc,
+
+      // ✅ Destination
+      destPincode,
+      destLoc,
+
+      // ✅ Document fields
+      weight,
+
+      // ✅ Non-doc fields
+      shipmentValue,
+      boxesCount,
+      boxRows,
+      totalWeightNonDoc: totalWeightNonDoc.toFixed(2),
+
+      // ✅ computed / derived
+      chargeableWeight: isNonDoc
+        ? totalWeightNonDoc.toFixed(2)
+        : Number(weight || 1).toFixed(2),
+
+      // ✅ timestamp optional
+      createdAt: new Date().toISOString(),
+    };
+
+    onRatesCalculated?.(computedRates, metaPayload);
   };
 
   return (
@@ -387,10 +414,10 @@ export default function DomesticRateCalculator({
               ? originLoading
                 ? "Validating..."
                 : originError
-                ? originError
-                : originLoc
-                ? `${originLoc.city}, ${originLoc.state}`
-                : ""
+                  ? originError
+                  : originLoc
+                    ? `${originLoc.city}, ${originLoc.state}`
+                    : ""
               : ""
           }
           hintType={
@@ -398,8 +425,8 @@ export default function DomesticRateCalculator({
               ? originError
                 ? "error"
                 : originLoc
-                ? "success"
-                : "muted"
+                  ? "success"
+                  : "muted"
               : "muted"
           }
         >
@@ -429,10 +456,10 @@ export default function DomesticRateCalculator({
               ? destLoading
                 ? "Validating..."
                 : destError
-                ? destError
-                : originLoc
-                ? `${destLoc.city}, ${destLoc.state}`
-                : ""
+                  ? destError
+                  : destLoc
+                    ? `${destLoc.city}, ${destLoc.state}`
+                    : ""
               : ""
           }
           hintType={
@@ -440,8 +467,8 @@ export default function DomesticRateCalculator({
               ? destError
                 ? "error"
                 : destLoc
-                ? "success"
-                : "muted"
+                  ? "success"
+                  : "muted"
               : "muted"
           }
         >
@@ -461,7 +488,6 @@ export default function DomesticRateCalculator({
           />
         </Field>
 
-        {/* Shipment Type */}
         <Field
           label="SHIPMENT TYPE"
           required
@@ -469,7 +495,6 @@ export default function DomesticRateCalculator({
           icon={<Package className="h-4 w-4 text-[#6b7280]" />}
         >
           <div className="relative w-full">
-            <div className="absolute inset-0 rounded-none opacity-60" />
             <select
               value={shipmentType}
               onChange={(e) => setShipmentType(e.target.value)}
@@ -494,7 +519,6 @@ export default function DomesticRateCalculator({
           </div>
         </Field>
 
-        {/* ✅ Document => Weight | ✅ Non-Doc => Boxes count */}
         {isDoc ? (
           <Field
             label="WEIGHT (kg)"
@@ -511,26 +535,56 @@ export default function DomesticRateCalculator({
             />
           </Field>
         ) : isNonDoc ? (
-          <Field
-            label="NUMBER OF BOXES  "
-            required
-            invalid={missingFields.boxesCount}
-            icon={<Boxes className="h-4 w-4 text-[#6b7280]" />}
-          >
-            <input
-              type="number"
-              min={1}
-              value={boxesCount}
-              onChange={(e) => {
-                const v = e.target.value;
-                setBoxesCount(v);
-              }}
-              placeholder="Enter number of boxes"
-              className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-            />
-          </Field>
+          <>
+            {/* ✅ NEW: Shipment Value */}
+            <Field
+              label="SHIPMENT VALUE (₹)"
+              required
+              invalid={missingFields.shipmentValue}
+              icon={<Package className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                type="number"
+                min={1}
+                value={shipmentValue}
+                onChange={(e) => setShipmentValue(e.target.value)}
+                placeholder="Enter shipment value"
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+              />
+            </Field>
+
+            <Field
+              label="NUMBER OF BOXES"
+              required
+              invalid={missingFields.boxesCount}
+              icon={<Boxes className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                type="number"
+                min={1}
+                value={boxesCount}
+                onChange={(e) => setBoxesCount(e.target.value)}
+                placeholder="Enter number of boxes"
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+              />
+            </Field>
+
+            {/* ✅ NEW: Total Weight calculated */}
+            <Field
+              label="TOTAL WEIGHT (kg)"
+              required
+              invalid={!!missingFields.totalWeightNonDoc}
+              icon={<Scale className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                readOnly
+                value={totalWeightNonDoc.toFixed(2)}
+                className="h-11 w-full px-4 text-sm font-extrabold text-gray-900 outline-none bg-gray-50 cursor-not-allowed"
+                placeholder="0.00"
+              />
+            </Field>
+          </>
         ) : (
-          // if shipmentType not selected, keep same layout
           <Field
             label="WEIGHT (kg)"
             required
@@ -548,7 +602,7 @@ export default function DomesticRateCalculator({
         )}
       </div>
 
-      {/* ✅ Non-doc rows (minimal) */}
+      {/* ✅ Non-doc rows */}
       {isNonDoc && clampInt(boxesCount || 0, 0, 9999) > 0 ? (
         <div className="mt-4 space-y-3">
           {boxRows.map((row, idx) => (
@@ -557,7 +611,6 @@ export default function DomesticRateCalculator({
               className="rounded-md border border-[#e5e7eb] bg-white p-3"
             >
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {/* Qty */}
                 <MiniInput
                   label="Qty"
                   type="number"
@@ -566,7 +619,6 @@ export default function DomesticRateCalculator({
                   onChange={(e) => handleQtyChange(idx, e.target.value)}
                 />
 
-                {/* Weight */}
                 <MiniInput
                   label="Weight (kg)"
                   type="number"
@@ -579,7 +631,6 @@ export default function DomesticRateCalculator({
                   }
                 />
 
-                {/* Length */}
                 <MiniInput
                   label="Length (cm)"
                   type="number"
@@ -592,7 +643,6 @@ export default function DomesticRateCalculator({
                   }
                 />
 
-                {/* Breadth */}
                 <MiniInput
                   label="Breadth (cm)"
                   type="number"
@@ -605,7 +655,6 @@ export default function DomesticRateCalculator({
                   }
                 />
 
-                {/* Height */}
                 <MiniInput
                   label="Height (cm)"
                   type="number"
@@ -641,6 +690,7 @@ export default function DomesticRateCalculator({
           Get Quotation
         </button>
       </div>
+
       {formError ? (
         <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-extrabold text-red-700 tracking-wider">
           {formError}
@@ -650,16 +700,6 @@ export default function DomesticRateCalculator({
       <p className="mt-4 text-xs text-gray-500">
         Tip: Enter correct pincode to avoid ODA surprises.
       </p>
-
-      <style>{`
-        @keyframes slideRight {
-          0%   { transform: translateX(-16px); opacity: 0.4; }
-          20%  { opacity: 1; }
-          50%  { transform: translateX(0px);  opacity: 1; }
-          80%  { opacity: 1; }
-          100% { transform: translateX(16px); opacity: 0.4; }
-        }
-      `}</style>
     </>
   );
 }
@@ -677,17 +717,15 @@ function Field({
     hintType === "error"
       ? "text-red-600"
       : hintType === "success"
-      ? "text-emerald-700"
-      : "text-gray-500";
+        ? "text-emerald-700"
+        : "text-gray-500";
 
   return (
     <div>
-      {/* ✅ Label row (no hint here, so it won't shift) */}
       <label className="block text-sm font-bold text-[#111827] tracking-wide">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
 
-      {/* ✅ Input box */}
       <div
         className={[
           "mt-2 flex items-center overflow-hidden rounded-md bg-white shadow-sm",
@@ -707,11 +745,9 @@ function Field({
         {children}
       </div>
 
-      {/* ✅ Hint / Error BELOW field (no shifting) */}
       {hint ? (
         <p className={`mt-2 text-[11px] font-bold ${hintClass}`}>{hint}</p>
       ) : (
-        // keeps spacing consistent even when no hint
         <div className="mt-2 h-[14px]" />
       )}
     </div>

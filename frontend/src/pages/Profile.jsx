@@ -37,7 +37,7 @@ const Profile = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch("https://logistics-bnqu.onrender.com/api/auth/me", {
+      await fetch(`${API_BASE_URL}/api/auth/me`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

@@ -1,15 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  MapPin,
-  Map,
-  Package,
-  Scale,
-  ChevronDown,
-  ChevronsRight,
-  Boxes,
-} from "lucide-react";
+import { MapPin, Map, Package, Scale, ChevronDown, Boxes } from "lucide-react";
 
-// ✅ India Post API
+// ✅ India Post API (only for India destination pincode)
 async function fetchPincodeDetails(pincode) {
   const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
   const data = await res.json();
@@ -48,12 +40,10 @@ function normalizeRowsToBoxes(rows, boxesCount) {
     height: r.height ?? "",
   }));
 
-  // If boxesCount is empty/0: return empty list
   if (!boxesCount || boxesCount < 1) return [];
 
   let total = safe.reduce((acc, r) => acc + r.qty, 0);
 
-  // If total qty is 0 or rows empty -> start from scratch
   if (safe.length === 0 || total === 0) {
     return Array.from({ length: boxesCount }, () => ({
       qty: 1,
@@ -64,13 +54,11 @@ function normalizeRowsToBoxes(rows, boxesCount) {
     }));
   }
 
-  // If total < boxesCount -> add qty=1 rows until equals
   while (total < boxesCount) {
     safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
     total += 1;
   }
 
-  // If total > boxesCount -> reduce qty from end
   while (total > boxesCount && safe.length > 0) {
     const last = safe[safe.length - 1];
     const canReduce = last.qty - 1;
@@ -79,16 +67,13 @@ function normalizeRowsToBoxes(rows, boxesCount) {
       last.qty -= 1;
       total -= 1;
     } else {
-      // qty == 1, remove the row
       safe.pop();
       total -= 1;
     }
   }
 
-  // Ensure no row has qty < 1
   for (const r of safe) r.qty = Math.max(1, r.qty);
 
-  // After reduction, may still have total < boxesCount (rare). Fill again.
   total = safe.reduce((acc, r) => acc + r.qty, 0);
   while (total < boxesCount) {
     safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
@@ -121,32 +106,88 @@ export default function ImportRateCalculator({
   onRatesCalculated,
   onResetAll,
 }) {
-  const [originPincode, setOriginPincode] = useState("");
-  const [destPincode, setDestPincode] = useState("");
+  // ✅ Import fields
+  const [destPincode, setDestPincode] = useState(""); // India
+  const [originCountry, setOriginCountry] = useState("");
+  const [originZipcode, setOriginZipcode] = useState("");
+
+  const destinationCountry = "India"; // fixed
+
+  // ✅ Shipment
   const [shipmentType, setShipmentType] = useState("");
   const [weight, setWeight] = useState("");
 
-  // ✅ Non-doc states
+  // ✅ Non-doc
   const [boxesCount, setBoxesCount] = useState("");
   const [boxRows, setBoxRows] = useState([]);
 
-  const [originLoc, setOriginLoc] = useState(null);
+  // ✅ Dest location lookup (India pincode)
   const [destLoc, setDestLoc] = useState(null);
-
-  const [originLoading, setOriginLoading] = useState(false);
   const [destLoading, setDestLoading] = useState(false);
-
-  const [originError, setOriginError] = useState("");
   const [destError, setDestError] = useState("");
-
-  const [originTouched, setOriginTouched] = useState(false);
   const [destTouched, setDestTouched] = useState(false);
 
+  // ✅ Origin ZIP basic validation only
+  const [originZipTouched, setOriginZipTouched] = useState(false);
+  const [originZipError, setOriginZipError] = useState("");
+
+  // ✅ Countries
+  const [countries, setCountries] = useState([]);
+  const [countriesLoading, setCountriesLoading] = useState(false);
+
+  // ✅ Errors
   const [formError, setFormError] = useState("");
   const [missingFields, setMissingFields] = useState({});
 
   const isNonDoc = shipmentType === "Non-Document";
   const isDoc = shipmentType === "Document";
+
+  // ✅ TOTAL WEIGHT for Non-Doc = sum(qty * row.weight)
+  const totalWeightNonDoc = useMemo(() => {
+    return boxRows.reduce((sum, r) => {
+      const qty = Number(r.qty || 0);
+      const wt = Number(r.weight || 0);
+      if (Number.isNaN(qty) || Number.isNaN(wt)) return sum;
+      return sum + qty * wt;
+    }, 0);
+  }, [boxRows]);
+
+  // ✅ Load countries
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCountries() {
+      try {
+        setCountriesLoading(true);
+
+        const res = await fetch(
+          "https://restcountries.com/v3.1/all?fields=name,cca2",
+        );
+        const data = await res.json();
+
+        if (cancelled) return;
+
+        const list = (Array.isArray(data) ? data : [])
+          .map((c) => ({
+            name: c?.name?.common || "",
+            code: c?.cca2 || "",
+          }))
+          .filter((c) => c.name && c.code)
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setCountries(list);
+      } catch (err) {
+        if (!cancelled) setCountries([]);
+      } finally {
+        if (!cancelled) setCountriesLoading(false);
+      }
+    }
+
+    loadCountries();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ✅ keep boxRows normalized whenever boxesCount changes (non-doc only)
   useEffect(() => {
@@ -159,96 +200,20 @@ export default function ImportRateCalculator({
   // when switching shipment type, reset irrelevant states
   useEffect(() => {
     if (shipmentType === "Document") {
-      // reset non-doc fields
       setBoxesCount("");
       setBoxRows([]);
     } else if (shipmentType === "Non-Document") {
-      // reset doc field
       setWeight("");
     }
   }, [shipmentType]);
 
-  const validateOriginOnBlur = async () => {
-    setOriginTouched(true);
-
-    if (!originPincode) {
-      setOriginLoc(null);
-      setOriginError("");
-      return;
-    }
-
-    if (originPincode.length !== 6) {
-      setOriginLoc(null);
-      setOriginError("Invalid Pincode");
-      return;
-    }
-
-    try {
-      setOriginLoading(true);
-      setOriginError("");
-
-      const d = await fetchPincodeDetails(originPincode);
-      if (!d) {
-        setOriginLoc(null);
-        setOriginError("Invalid Pincode");
-      } else {
-        setOriginLoc(d);
-        setOriginError("");
-      }
-    } catch {
-      setOriginLoc(null);
-      setOriginError("Invalid Pincode");
-    } finally {
-      setOriginLoading(false);
-    }
-  };
-
-  const validateForm = () => {
-    const missing = {};
-
-    // required always
-    if (!originPincode) missing.originPincode = true;
-    if (!destPincode) missing.destPincode = true;
-    if (!shipmentType) missing.shipmentType = true;
-
-    // doc/non-doc required fields
-    if (shipmentType === "Document") {
-      if (!weight) missing.weight = true;
-    }
-
-    if (shipmentType === "Non-Document") {
-      if (!boxesCount || Number(boxesCount) < 1) missing.boxesCount = true;
-
-      // if boxes exist, validate rows
-      const count = clampInt(boxesCount || 0, 0, 9999);
-      if (count > 0) {
-        boxRows.forEach((r, idx) => {
-          if (!r.weight) missing[`row_${idx}_weight`] = true;
-          if (!r.length) missing[`row_${idx}_length`] = true;
-          if (!r.breadth) missing[`row_${idx}_breadth`] = true;
-          if (!r.height) missing[`row_${idx}_height`] = true;
-        });
-      }
-    }
-
-    setMissingFields(missing);
-
-    // any missing?
-    if (Object.keys(missing).length > 0) {
-      setFormError("All fields are required");
-      return false;
-    }
-
-    setFormError("");
-    return true;
-  };
-
+  // ✅ Destination pincode blur -> India Post API
   const validateDestOnBlur = async () => {
     setDestTouched(true);
 
     if (!destPincode) {
       setDestLoc(null);
-      setDestError("");
+      setDestError("Required");
       return;
     }
 
@@ -278,39 +243,95 @@ export default function ImportRateCalculator({
     }
   };
 
+  const validateOriginZipOnBlur = () => {
+    setOriginZipTouched(true);
+
+    if (!originZipcode) {
+      setOriginZipError("Required");
+      return;
+    }
+
+    setOriginZipError("");
+  };
+
+  const validateForm = () => {
+    const missing = {};
+
+    // required always
+    if (!destPincode) missing.destPincode = true;
+    if (!shipmentType) missing.shipmentType = true;
+    if (!originCountry) missing.originCountry = true;
+    if (originCountry && !originZipcode) missing.originZipcode = true;
+
+    // Destination pincode errors
+    if (destError) missing.destPincode = true;
+    if (originZipError) missing.originZipcode = true;
+
+    // Doc required
+    if (shipmentType === "Document") {
+      if (!weight || Number(weight) <= 0) missing.weight = true;
+    }
+
+    // Non-doc required
+    if (shipmentType === "Non-Document") {
+      const count = clampInt(boxesCount || 0, 0, 9999);
+      const totWt = Number(totalWeightNonDoc);
+
+      if (!boxesCount || Number.isNaN(count) || count < 1)
+        missing.boxesCount = true;
+
+      // ✅ total weight must be > 0
+      if (!totWt || Number.isNaN(totWt) || totWt <= 0)
+        missing.totalWeightNonDoc = true;
+
+      if (count > 0) {
+        boxRows.forEach((r, idx) => {
+          if (!r.weight || Number(r.weight) <= 0)
+            missing[`row_${idx}_weight`] = true;
+          if (!r.length || Number(r.length) <= 0)
+            missing[`row_${idx}_length`] = true;
+          if (!r.breadth || Number(r.breadth) <= 0)
+            missing[`row_${idx}_breadth`] = true;
+          if (!r.height || Number(r.height) <= 0)
+            missing[`row_${idx}_height`] = true;
+        });
+      }
+    }
+
+    setMissingFields(missing);
+
+    if (Object.keys(missing).length > 0) {
+      setFormError("All fields are required");
+      return false;
+    }
+
+    setFormError("");
+    return true;
+  };
+
   const handleReset = () => {
-    setOriginPincode("");
     setDestPincode("");
+    setDestLoc(null);
+    setDestError("");
+    setDestTouched(false);
+
+    setOriginCountry("");
+    setOriginZipcode("");
+    setOriginZipTouched(false);
+    setOriginZipError("");
+
     setShipmentType("");
     setWeight("");
 
     setBoxesCount("");
     setBoxRows([]);
 
-    setOriginLoc(null);
-    setDestLoc(null);
-
-    setOriginLoading(false);
-    setDestLoading(false);
-
-    setOriginError("");
-    setDestError("");
-
-    setOriginTouched(false);
-    setDestTouched(false);
+    setFormError("");
+    setMissingFields({});
 
     onResetAll?.();
   };
 
-  const showRoute =
-    originLoc?.city &&
-    originLoc?.state &&
-    destLoc?.city &&
-    destLoc?.state &&
-    !originError &&
-    !destError;
-
-  // ✅ Change quantity logic: sum must stay = boxesCount
   const handleQtyChange = (rowIndex, nextQtyRaw) => {
     const count = clampInt(boxesCount || 0, 0, 9999);
     if (count < 1) return;
@@ -319,14 +340,10 @@ export default function ImportRateCalculator({
       let rows = normalizeRowsToBoxes(prev, count);
       if (!rows[rowIndex]) return rows;
 
-      // desired qty
       let nextQty = clampInt(nextQtyRaw, 1, 999999);
       rows[rowIndex].qty = nextQty;
 
-      // normalize again so total qty becomes count
       rows = normalizeRowsToBoxes(rows, count);
-
-      // Ensure the edited row doesn't get deleted (edge case)
       if (!rows[rowIndex]) return rows;
 
       return rows;
@@ -346,119 +363,107 @@ export default function ImportRateCalculator({
     const ok = validateForm();
     if (!ok) return;
 
-    // ✅ Example computed rates
     const computedRates = [
       {
-        carrier: "sKart Domestic North",
+        carrier: "Import Service",
         serviceName: "Standard",
-        productType: "VENP160",
-        cost: 44,
-        tatDays: 0,
-        chargeableWeight: Number(weight || 1).toFixed(2),
-      },
-      {
-        carrier: "BlueDart Surface",
-        serviceName: "Surface",
-        productType: "SURF",
-        cost: 62,
-        tatDays: 2,
-        chargeableWeight: Number(weight || 1).toFixed(2),
+        productType: "IMPRT",
+        cost: 120,
+        tatDays: 3,
+        chargeableWeight: isNonDoc
+          ? totalWeightNonDoc.toFixed(2)
+          : Number(weight || 1).toFixed(2),
+        breakup: [
+          { label: "FUEL SURCHARGE", amount: 20 },
+          { label: "FREIGHT", amount: 100 },
+        ],
       },
     ];
 
-    onRatesCalculated?.(computedRates, {
-      origin: originPincode,
-      destination: destPincode,
+    const metaPayload = {
+      calculatorType: "import",
+
       shipmentType,
-    });
+
+      destinationCountry,
+      destinationPincode: destPincode,
+      destLoc,
+
+      originCountry,
+      originZipcode,
+
+      // doc
+      weight,
+
+      // non-doc
+      boxesCount,
+      boxRows,
+      totalWeightNonDoc: totalWeightNonDoc.toFixed(2),
+
+      // derived
+      chargeableWeight: isNonDoc
+        ? totalWeightNonDoc.toFixed(2)
+        : Number(weight || 1).toFixed(2),
+
+      createdAt: new Date().toISOString(),
+    };
+
+    onRatesCalculated?.(computedRates, metaPayload);
   };
+
+  const showOriginZip = !!originCountry;
 
   return (
     <>
-      {/* ✅ Route Preview */}
-      {showRoute ? (
-        <div className="pb-4">
-          <div className="rounded-md bg-[#fff7e6] border border-[#fde6b3] px-6 py-5">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-              <div className="text-left">
-                <div className="text-sm font-medium text-[#111827]">
-                  City : <span className="font-bold">{originLoc.city}</span>
-                </div>
-                <div className="text-sm font-medium text-[#111827] mt-1">
-                  State : <span className="font-bold">{originLoc.state}</span>
-                </div>
-              </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* ✅ DESTINATION COUNTRY (Fixed: India) */}
+        <Field
+          label="DESTINATION COUNTRY"
+          required
+          icon={<Map className="h-4 w-4 text-[#6b7280]" />}
+          hintType="success"
+        >
+          <div className="relative w-full">
+            <input
+              value="India"
+              disabled
+              className="h-11 w-full px-4 text-sm font-extrabold text-[#111827] bg-gray-50 outline-none cursor-not-allowed"
+            />
 
-              <div className="relative w-20 h-10 overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="animate-[slideRight_1.2s_linear_infinite] text-[#f2b632]">
-                    <ChevronsRight className="h-10 w-10" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div className="text-sm font-medium text-[#111827]">
-                  City : <span className="font-bold">{destLoc.city}</span>
-                </div>
-                <div className="text-sm font-medium text-[#111827] mt-1">
-                  State : <span className="font-bold">{destLoc.state}</span>
-                </div>
+            <div className="pointer-events-none absolute right-0 top-0 h-full flex items-center">
+              <div className="mr-3 grid h-8 w-8 place-items-center rounded-lg">
+                <ChevronDown className="h-4 w-4 text-gray-400" />
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
-
-      {/* Form */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field
-          label="ORIGIN PINCODE"
-          required
-          invalid={missingFields.originPincode}
-          icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
-          hint={
-            originTouched
-              ? originLoading
-                ? "Validating..."
-                : originError
-                ? originError
-                : ""
-              : ""
-          }
-          hintType={originError ? "error" : "muted"}
-        >
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={6}
-            value={originPincode}
-            onChange={(e) => {
-              setOriginPincode(e.target.value.replace(/\D/g, ""));
-              setOriginError("");
-              setOriginLoc(null);
-            }}
-            onBlur={validateOriginOnBlur}
-            placeholder="Enter origin pincode"
-            className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-          />
         </Field>
 
+        {/* ✅ DESTINATION PINCODE (India Post validation) */}
         <Field
           label="DESTINATION PINCODE"
           required
           invalid={missingFields.destPincode}
-          icon={<Map className="h-4 w-4 text-[#6b7280]" />}
+          icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
           hint={
             destTouched
               ? destLoading
                 ? "Validating..."
                 : destError
-                ? destError
-                : ""
+                  ? destError
+                  : destLoc
+                    ? `${destLoc.city}, ${destLoc.state}`
+                    : ""
               : ""
           }
-          hintType={destError ? "error" : "muted"}
+          hintType={
+            destTouched
+              ? destError
+                ? "error"
+                : destLoc
+                  ? "success"
+                  : "muted"
+              : "muted"
+          }
         >
           <input
             type="text"
@@ -476,6 +481,72 @@ export default function ImportRateCalculator({
           />
         </Field>
 
+        {/* ✅ ORIGIN COUNTRY */}
+        <Field
+          label="ORIGIN COUNTRY"
+          required
+          invalid={missingFields.originCountry}
+          icon={<Map className="h-4 w-4 text-[#6b7280]" />}
+        >
+          <div className="relative w-full">
+            <select
+              value={originCountry}
+              onChange={(e) => {
+                setOriginCountry(e.target.value);
+                setOriginZipcode("");
+                setOriginZipTouched(false);
+                setOriginZipError("");
+                setMissingFields((p) => ({ ...p, originCountry: false }));
+              }}
+              className={[
+                "relative z-10 h-11 w-full appearance-none bg-transparent",
+                "px-4 pr-12 text-sm tracking-wide text-[#111827]",
+                "outline-none cursor-pointer",
+              ].join(" ")}
+            >
+              <option value="" disabled>
+                {countriesLoading ? "Loading..." : "Select origin country"}
+              </option>
+
+              {countries.map((c) => (
+                <option key={c.code} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <div className="pointer-events-none absolute right-0 top-0 h-full flex items-center">
+              <div className="mr-3 grid h-8 w-8 place-items-center rounded-lg">
+                <ChevronDown className="h-4 w-4 text-[#b45309]" />
+              </div>
+            </div>
+          </div>
+        </Field>
+
+        {/* ✅ ORIGIN ZIPCODE */}
+        {showOriginZip ? (
+          <Field
+            label="ORIGIN ZIPCODE"
+            required
+            invalid={missingFields.originZipcode}
+            icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
+            hint={originZipTouched ? originZipError : ""}
+            hintType={originZipError ? "error" : "muted"}
+          >
+            <input
+              type="text"
+              value={originZipcode}
+              onChange={(e) => {
+                setOriginZipcode(e.target.value);
+                setOriginZipError("");
+              }}
+              onBlur={validateOriginZipOnBlur}
+              placeholder="Enter origin zipcode"
+              className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+            />
+          </Field>
+        ) : null}
+
         {/* Shipment Type */}
         <Field
           label="SHIPMENT TYPE"
@@ -484,7 +555,6 @@ export default function ImportRateCalculator({
           icon={<Package className="h-4 w-4 text-[#6b7280]" />}
         >
           <div className="relative w-full">
-            <div className="absolute inset-0 rounded-none opacity-60" />
             <select
               value={shipmentType}
               onChange={(e) => setShipmentType(e.target.value)}
@@ -509,7 +579,7 @@ export default function ImportRateCalculator({
           </div>
         </Field>
 
-        {/* ✅ Document => Weight | ✅ Non-Doc => Boxes count */}
+        {/* ✅ Document => Weight | ✅ Non-Doc => Boxes */}
         {isDoc ? (
           <Field
             label="WEIGHT (kg)"
@@ -527,7 +597,7 @@ export default function ImportRateCalculator({
           </Field>
         ) : isNonDoc ? (
           <Field
-            label="NUMBER OF BOXES  "
+            label="NUMBER OF BOXES"
             required
             invalid={missingFields.boxesCount}
             icon={<Boxes className="h-4 w-4 text-[#6b7280]" />}
@@ -538,14 +608,14 @@ export default function ImportRateCalculator({
               value={boxesCount}
               onChange={(e) => {
                 const v = e.target.value;
-                setBoxesCount(v);
+                const n = clampInt(v || 0, 0, 9999);
+                setBoxesCount(n === 0 ? "" : String(n));
               }}
               placeholder="Enter number of boxes"
               className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
             />
           </Field>
         ) : (
-          // if shipmentType not selected, keep same layout
           <Field
             label="WEIGHT (kg)"
             required
@@ -563,7 +633,7 @@ export default function ImportRateCalculator({
         )}
       </div>
 
-      {/* ✅ Non-doc rows (minimal) */}
+      {/* ✅ Non-doc mini rows */}
       {isNonDoc && clampInt(boxesCount || 0, 0, 9999) > 0 ? (
         <div className="mt-4 space-y-3">
           {boxRows.map((row, idx) => (
@@ -572,7 +642,6 @@ export default function ImportRateCalculator({
               className="rounded-md border border-[#e5e7eb] bg-white p-3"
             >
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {/* Qty */}
                 <MiniInput
                   label="Qty"
                   type="number"
@@ -580,52 +649,44 @@ export default function ImportRateCalculator({
                   value={row.qty}
                   onChange={(e) => handleQtyChange(idx, e.target.value)}
                 />
-
-                {/* Weight */}
                 <MiniInput
                   label="Weight (kg)"
                   type="number"
-                  invalid={missingFields[`row_${idx}_weight`]}
                   min={0}
+                  invalid={missingFields[`row_${idx}_weight`]}
                   value={row.weight}
                   placeholder="kg"
                   onChange={(e) =>
                     handleRowFieldChange(idx, "weight", e.target.value)
                   }
                 />
-
-                {/* Length */}
                 <MiniInput
                   label="Length (cm)"
                   type="number"
-                  invalid={missingFields[`row_${idx}_length`]}
                   min={1}
+                  invalid={missingFields[`row_${idx}_length`]}
                   value={row.length}
                   placeholder="cm"
                   onChange={(e) =>
                     handleRowFieldChange(idx, "length", e.target.value)
                   }
                 />
-
-                {/* Breadth */}
                 <MiniInput
                   label="Breadth (cm)"
                   type="number"
-                  invalid={missingFields[`row_${idx}_breadth`]}
                   min={1}
+                  invalid={missingFields[`row_${idx}_breadth`]}
                   value={row.breadth}
                   placeholder="cm"
                   onChange={(e) =>
                     handleRowFieldChange(idx, "breadth", e.target.value)
                   }
                 />
-
-                {/* Height */}
                 <MiniInput
                   label="Height (cm)"
                   type="number"
-                  invalid={missingFields[`row_${idx}_height`]}
                   min={1}
+                  invalid={missingFields[`row_${idx}_height`]}
                   value={row.height}
                   placeholder="cm"
                   onChange={(e) =>
@@ -656,6 +717,7 @@ export default function ImportRateCalculator({
           Get Quotation
         </button>
       </div>
+
       {formError ? (
         <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-extrabold text-red-700 tracking-wider">
           {formError}
@@ -663,22 +725,13 @@ export default function ImportRateCalculator({
       ) : null}
 
       <p className="mt-4 text-xs text-gray-500">
-        Tip: Enter correct pincode to avoid ODA surprises.
+        Tip: Destination pincode is validated with India Post.
       </p>
-
-      <style>{`
-        @keyframes slideRight {
-          0%   { transform: translateX(-16px); opacity: 0.4; }
-          20%  { opacity: 1; }
-          50%  { transform: translateX(0px);  opacity: 1; }
-          80%  { opacity: 1; }
-          100% { transform: translateX(16px); opacity: 0.4; }
-        }
-      `}</style>
     </>
   );
 }
 
+/* --- Field UI same as Export component --- */
 function Field({
   label,
   required,
@@ -692,20 +745,14 @@ function Field({
     hintType === "error"
       ? "text-red-600"
       : hintType === "success"
-      ? "text-emerald-700"
-      : "text-gray-500";
+        ? "text-emerald-700"
+        : "text-gray-500";
 
   return (
     <div>
-      <div className="flex items-end justify-between gap-3">
-        <label className="block text-sm font-bold text-[#111827] tracking-wide">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
-
-        {hint ? (
-          <span className={`text-[11px] font-bold ${hintClass}`}>{hint}</span>
-        ) : null}
-      </div>
+      <label className="block text-sm font-bold text-[#111827] tracking-wide">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
 
       <div
         className={[
@@ -725,6 +772,12 @@ function Field({
         </div>
         {children}
       </div>
+
+      {hint ? (
+        <p className={`mt-2 text-[11px] font-bold ${hintClass}`}>{hint}</p>
+      ) : (
+        <div className="mt-2 h-[14px]" />
+      )}
     </div>
   );
 }

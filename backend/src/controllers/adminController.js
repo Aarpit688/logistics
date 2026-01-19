@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Msme from "../models/Msme.js";
 import { generateAccountCode } from "../utils/accountCode.js";
+import SpotPricing from "../models/SpotPricing.js";
 
 /* ===========================
    ADMIN AUTH
@@ -62,7 +63,7 @@ export const toggleUserApproval = async (req, res) => {
       isApprovedByAdmin: approved,
       approvedAt: approved ? new Date() : null,
     },
-    { new: true }
+    { new: true },
   );
 
   res.json({ user });
@@ -165,7 +166,7 @@ export const updateMsmeStatus = async (req, res) => {
   const msme = await Msme.findByIdAndUpdate(
     req.params.id,
     { status, adminRemark },
-    { new: true }
+    { new: true },
   );
 
   if (!msme) {
@@ -176,4 +177,133 @@ export const updateMsmeStatus = async (req, res) => {
     message: "MSME status updated",
     status: msme.status,
   });
+};
+
+// ✅ GET: /api/admin/spot-pricing
+export const getAllSpotPricingEnquiries = async (req, res) => {
+  try {
+    const page = Math.max(Number(req.query.page || 1), 1);
+    const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 100);
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (req.query.status) filter.status = req.query.status;
+
+    const [total, list] = await Promise.all([
+      SpotPricing.countDocuments(filter),
+      SpotPricing.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    ]);
+
+    const data = list.map((e, idx) => ({
+      srNo: skip + idx + 1,
+      id: e._id,
+      enquiryId: e.enquiryId,
+      enquiryDate: e.createdAt,
+
+      origin: e.serviceability?.origin?.city,
+      destination: e.serviceability?.destination?.country,
+
+      weight: e.shipmentDetails?.totalWeight,
+      vendor: e.shipmentDetails?.vendor,
+
+      status: e.status,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: "Spot pricing enquiries fetched",
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      data,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch enquiries",
+      error: error.message,
+    });
+  }
+};
+
+// ✅ GET: /api/admin/spot-pricing/:id
+export const getSpotPricingEnquiryById = async (req, res) => {
+  try {
+    const enquiry = await SpotPricing.findById(req.params.id);
+    if (!enquiry) {
+      return res.status(404).json({
+        success: false,
+        message: "Enquiry not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Enquiry fetched successfully",
+      data: enquiry,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch enquiry",
+      error: error.message,
+    });
+  }
+};
+
+// ✅ PATCH: /api/admin/spot-pricing/:id/quote
+export const updateSpotPricingAdminQuote = async (req, res) => {
+  try {
+    const {
+      documents,
+      quotedPrice,
+      currency,
+      rateValidTill,
+      adminNotes,
+      status,
+    } = req.body;
+
+    const updated = await SpotPricing.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...(adminNotes !== undefined ? { adminNotes } : {}),
+        ...(status ? { status } : {}),
+
+        // ✅ admin quote fields
+        ...(documents !== undefined
+          ? { "adminQuote.documents": documents }
+          : {}),
+        ...(quotedPrice !== undefined
+          ? { "adminQuote.quotedPrice": quotedPrice }
+          : {}),
+        ...(currency !== undefined ? { "adminQuote.currency": currency } : {}),
+        ...(rateValidTill !== undefined
+          ? { "adminQuote.rateValidTill": rateValidTill }
+          : {}),
+      },
+      { new: true },
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Enquiry not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Quote updated successfully",
+      data: updated,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update quote",
+      error: error.message,
+    });
+  }
 };

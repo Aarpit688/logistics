@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import UserRow from "./UserRow";
 import { LogOut } from "lucide-react";
 import { logoutAdmin } from "../utils/adminAuth";
+import { API_BASE_URL } from "../../config/api";
 
 const AdminDashboard = () => {
   const adminToken = localStorage.getItem("adminToken");
@@ -14,12 +15,12 @@ const AdminDashboard = () => {
 
   const fetchUsers = async () => {
     const res = await fetch(
-      `https://logistics-bnqu.onrender.com/api/admin/users?search=${search}&page=${page}&limit=${limit}`,
+      `${API_BASE_URL}/api/admin/users?search=${search}&page=${page}&limit=${limit}`,
       {
         headers: {
           Authorization: `Bearer ${adminToken}`,
         },
-      }
+      },
     );
 
     const data = await res.json();

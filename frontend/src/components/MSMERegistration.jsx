@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ArrowLeft, Upload } from "lucide-react";
+import { API_BASE_URL } from "../config/api";
 
 const initialForm = {
   companyName: "",
@@ -49,7 +50,7 @@ const MSMERegistration = ({ onBack }) => {
     try {
       setLoadingPin(true);
       const res = await fetch(
-        `https://api.postalpincode.in/pincode/${form.pincode}`
+        `https://api.postalpincode.in/pincode/${form.pincode}`,
       );
       const data = await res.json();
 
@@ -89,28 +90,32 @@ const MSMERegistration = ({ onBack }) => {
 
     const formData = new FormData();
 
+    // ✅ add text fields
     Object.entries(form).forEach(([key, value]) => {
-      formData.append(key, value);
+      formData.set(key, value || "");
     });
 
-    formData.append("gst", files.gstinFile);
-    formData.append("iec", files.iecFile);
-    formData.append("pan", files.panFile);
-    formData.append("stamp", files.authFile);
+    // ✅ IMPORTANT: use separate keys for document files
+    if (files.gstinFile) formData.set("gstDoc", files.gstinFile);
+    if (files.iecFile) formData.set("iecDoc", files.iecFile);
+    if (files.panFile) formData.set("panDoc", files.panFile);
+    if (files.authFile) formData.set("stampDoc", files.authFile);
 
     try {
-      const res = await fetch(
-        "https://logistics-bnqu.onrender.com/api/auth/msme",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/auth/msme`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
 
-      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data?.message || "Registration failed");
+        return;
+      }
 
       alert("MSME registered successfully");
       onBack();

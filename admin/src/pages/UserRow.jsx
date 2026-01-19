@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { API_BASE_URL } from "../../config/api";
 
 const UserRow = ({ user, refresh }) => {
   const adminToken = localStorage.getItem("adminToken");
@@ -6,35 +7,29 @@ const UserRow = ({ user, refresh }) => {
   const [remarks, setRemarks] = useState(user.documentRemarks || {});
 
   const toggleApproval = async (checked) => {
-    await fetch(
-      `https://logistics-bnqu.onrender.com/api/admin/users/${user._id}/approval`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify({ approved: checked }),
-      }
-    );
+    await fetch(`${API_BASE_URL}/api/admin/users/${user._id}/approval`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ approved: checked }),
+    });
     refresh();
   };
 
   const saveRemark = async (doc) => {
-    await fetch(
-      `https://logistics-bnqu.onrender.com/api/admin/users/${user._id}/document-remark`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify({
-          document: doc,
-          remark: remarks[doc],
-        }),
-      }
-    );
+    await fetch(`${API_BASE_URL}/api/admin/users/${user._id}/document-remark`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        document: doc,
+        remark: remarks[doc],
+      }),
+    });
   };
 
   const assignAccountType = async (userId, accountType, token) => {
@@ -44,7 +39,7 @@ const UserRow = ({ user, refresh }) => {
     }
 
     const res = await fetch(
-      `https://logistics-bnqu.onrender.com/api/admin/users/${userId}/account-type`,
+      `${API_BASE_URL}/api/admin/users/${userId}/account-type`,
       {
         method: "PUT",
         headers: {
@@ -52,7 +47,7 @@ const UserRow = ({ user, refresh }) => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ accountType }),
-      }
+      },
     );
 
     const data = await res.json();
@@ -81,7 +76,7 @@ const UserRow = ({ user, refresh }) => {
                 if (
                   user.accountCode &&
                   !window.confirm(
-                    `This will change account code from ${user.accountCode}. Continue?`
+                    `This will change account code from ${user.accountCode}. Continue?`,
                   )
                 ) {
                   return;
@@ -155,7 +150,7 @@ const UserRow = ({ user, refresh }) => {
                           <span className="font-medium uppercase">{doc}</span>
 
                           <a
-                            href={`https://logistics-bnqu.onrender.com/${file}`}
+                            href={`${API_BASE_URL}/${file}`}
                             target="_blank"
                             rel="noreferrer"
                             className="text-blue-600 underline"
@@ -178,7 +173,7 @@ const UserRow = ({ user, refresh }) => {
                           onBlur={() => saveRemark(doc)}
                         />
                       </div>
-                    )
+                    ),
                 )}
               </div>
             </div>

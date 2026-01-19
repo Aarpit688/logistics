@@ -3,8 +3,7 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import MSMERegistration from "./MSMERegistration";
 import { FileText } from "lucide-react";
-
-const BASE_URL = "https://logistics-bnqu.onrender.com";
+import { API_BASE_URL } from "../config/api";
 
 const MSMEList = () => {
   const [data, setData] = useState([]);
@@ -19,18 +18,11 @@ const MSMEList = () => {
   ============================ */
   const fetchMsmes = async () => {
     try {
-      const res = await fetch(
-        "https://logistics-bnqu.onrender.com/api/auth/msme",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/auth/msme`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      if (!res.ok) {
-        throw new Error("Failed to fetch MSMEs");
-      }
+      if (!res.ok) throw new Error("Failed to fetch MSMEs");
 
       const result = await res.json();
 
@@ -62,6 +54,7 @@ const MSMEList = () => {
 
   useEffect(() => {
     fetchMsmes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ===========================
@@ -111,7 +104,7 @@ const MSMEList = () => {
       new Blob([excelBuffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }),
-      "MSME_List.xlsx"
+      "MSME_List.xlsx",
     );
   };
 
@@ -135,23 +128,25 @@ const MSMEList = () => {
 
   return (
     <div className="w-full max-w-full overflow-hidden">
-      <div className="bg-white rounded-xl shadow p-6">
+      <div className="bg-white rounded-xl shadow p-4 sm:p-6">
         {/* HEADER */}
         <div className="mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <h2 className="text-2xl font-bold text-gray-800">MSME List</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800">
+            MSME List
+          </h2>
 
-          {/* HEADER ACTIONS */}
-          <div className="flex flex-wrap items-center gap-4">
+          {/* HEADER ACTIONS (Responsive) */}
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
             <button
               onClick={() => setShowRegistration(true)}
-              className="bg-yellow-400 hover:bg-yellow-500 text-white font-semibold px-5 py-2 rounded-lg shadow"
+              className="bg-yellow-400 hover:bg-yellow-500 text-white font-semibold px-5 py-2 rounded-lg shadow w-full sm:w-auto"
             >
               + Registration
             </button>
 
             <button
               onClick={handleDownload}
-              className="bg-green-500 hover:bg-green-600 text-white font-semibold px-5 py-2 rounded-lg shadow"
+              className="bg-green-500 hover:bg-green-600 text-white font-semibold px-5 py-2 rounded-lg shadow w-full sm:w-auto"
             >
               Download
             </button>
@@ -161,150 +156,165 @@ const MSMEList = () => {
               placeholder="Enter Mobile No."
               value={searchMobile}
               onChange={(e) => setSearchMobile(e.target.value)}
-              className="border border-gray-300 rounded-lg px-4 py-2 w-56 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+              className="border border-gray-300 rounded-lg px-4 py-2 w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-yellow-400"
             />
 
             <button
               onClick={handleReset}
-              className="bg-red-500 hover:bg-red-600 text-white font-semibold px-6 py-2 rounded-lg shadow"
+              className="bg-red-500 hover:bg-red-600 text-white font-semibold px-6 py-2 rounded-lg shadow w-full sm:w-auto"
             >
               RESET
             </button>
           </div>
         </div>
 
-        {/* TABLE */}
-        <div className="relative overflow-x-auto border border-gray-200 rounded-lg">
-          <table className="w-max table-auto border-collapse text-sm">
-            <thead className="bg-black text-white">
-              <tr>
-                {[
-                  "SR.NO.",
-                  "COMPANY NAME",
-                  "CONTACT PERSON",
-                  "MOBILE NUMBER",
-                  "EMAIL",
-                  "ADDRESS",
-                  "CITY",
-                  "STATE",
-                  "PINCODE",
-                  "GSTIN NUMBER",
-                  "IEC CODE",
-                  "PAN NUMBER",
-                  "AUTHORISATION LETTER",
-                  "STATUS",
-                ].map((header) => (
-                  <th
-                    key={header}
-                    className="border px-4 py-3 whitespace-nowrap"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredData.length > 0 ? (
-                filteredData.map((row) => (
-                  <tr
-                    key={row.msmeId}
-                    className="text-gray-800 hover:bg-gray-50"
-                  >
-                    <td className="border px-10 py-3 text-center">{row.sr}.</td>
-                    <td className="border px-14 py-3 font-semibold text-center">
-                      {row.company}
-                    </td>
-                    <td className="border px-14 py-3 text-center">
-                      {row.contact}
-                    </td>
-                    <td className="border px-14 py-3 text-center">
-                      {row.mobile}
-                    </td>
-                    <td className="border px-10 py-3 text-center">
-                      {row.email}
-                    </td>
-                    <td className="border px-10 py-3 text-center">
-                      {row.address}
-                    </td>
-                    <td className="border px-10 py-3 text-center">
-                      {row.city}
-                    </td>
-                    <td className="border px-10 py-3 text-center">
-                      {row.state}
-                    </td>
-                    <td className="border px-10 py-3 text-center">
-                      {row.pincode}
-                    </td>
-                    <td className="border px-10 py-3 text-yellow-600 underline">
-                      <a
-                        href={`${BASE_URL}/${row.documents?.gst}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {row.gstin}
-                      </a>
-                    </td>
-
-                    <td className="border px-10 py-3 text-yellow-600 underline">
-                      <a
-                        href={`${BASE_URL}/${row.documents.iec}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {row.iec}
-                      </a>
-                    </td>
-
-                    <td className="border px-10 py-3 text-yellow-600 underline">
-                      <a
-                        href={`${BASE_URL}/${row.documents.pan}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {row.pan}
-                      </a>
-                    </td>
-
-                    <td className="border px-10 py-3 text-yellow-600 underline">
-                      <a
-                        href={`${BASE_URL}/${row.documents.stamp}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <FileText
-                          size={22}
-                          className="text-yellow-600 hover:text-yellow-700 mx-auto"
-                        />
-                      </a>
-                    </td>
-
-                    <td
-                      className={`border px-10 py-3 font-bold ${
-                        row.status === "APPROVED"
-                          ? "text-green-600"
-                          : row.status === "REJECTED"
-                          ? "text-red-500"
-                          : "text-gray-600"
-                      }`}
+        {/* TABLE (Responsive + sticky header + sticky first column) */}
+        <div className="relative rounded-lg border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-[1100px] w-full border-collapse text-sm">
+              <thead className="bg-black text-white sticky top-0 z-10">
+                <tr>
+                  {[
+                    "SR.NO.",
+                    "COMPANY NAME",
+                    "CONTACT PERSON",
+                    "MOBILE NUMBER",
+                    "EMAIL",
+                    "ADDRESS",
+                    "CITY",
+                    "STATE",
+                    "PINCODE",
+                    "GSTIN NUMBER",
+                    "IEC CODE",
+                    "PAN NUMBER",
+                    "AUTHORISATION LETTER",
+                    "STATUS",
+                  ].map((header) => (
+                    <th
+                      key={header}
+                      className="border border-gray-800 px-3 sm:px-4 py-3 whitespace-nowrap text-xs sm:text-sm"
                     >
-                      {row.status}
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredData.length > 0 ? (
+                  filteredData.map((row) => (
+                    <tr
+                      key={row.msmeId}
+                      className="text-gray-800 hover:bg-gray-50 transition"
+                    >
+                      {/* Sticky SR.NO */}
+                      <td className="border px-3 sm:px-4 py-3 text-center font-bold sticky left-0 bg-white z-[1]">
+                        {row.sr}.
+                      </td>
+
+                      <td className="border px-3 sm:px-4 py-3 font-semibold text-center whitespace-nowrap">
+                        {row.company}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center whitespace-nowrap">
+                        {row.contact}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center whitespace-nowrap">
+                        {row.mobile}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center whitespace-nowrap">
+                        {row.email}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center min-w-[240px]">
+                        {row.address}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center whitespace-nowrap">
+                        {row.city}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center whitespace-nowrap">
+                        {row.state}
+                      </td>
+                      <td className="border px-3 sm:px-4 py-3 text-center whitespace-nowrap">
+                        {row.pincode}
+                      </td>
+
+                      {/* GST */}
+                      <td className="border px-3 sm:px-4 py-3 text-yellow-600 underline text-center whitespace-nowrap">
+                        <a
+                          href={`${API_BASE_URL}/${row.documents?.gst}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {row.gstin}
+                        </a>
+                      </td>
+
+                      {/* IEC */}
+                      <td className="border px-3 sm:px-4 py-3 text-yellow-600 underline text-center whitespace-nowrap">
+                        <a
+                          href={`${API_BASE_URL}/${row.documents?.iec}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {row.iec}
+                        </a>
+                      </td>
+
+                      {/* PAN */}
+                      <td className="border px-3 sm:px-4 py-3 text-yellow-600 underline text-center whitespace-nowrap">
+                        <a
+                          href={`${API_BASE_URL}/${row.documents?.pan}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {row.pan}
+                        </a>
+                      </td>
+
+                      {/* Stamp */}
+                      <td className="border px-3 sm:px-4 py-3 text-center">
+                        <a
+                          href={`${API_BASE_URL}/${row.documents?.stamp}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <FileText
+                            size={20}
+                            className="text-yellow-600 hover:text-yellow-700 mx-auto"
+                          />
+                        </a>
+                      </td>
+
+                      {/* Status */}
+                      <td
+                        className={`border px-3 sm:px-4 py-3 font-bold text-center whitespace-nowrap ${
+                          row.status === "APPROVED"
+                            ? "text-green-600"
+                            : row.status === "REJECTED"
+                              ? "text-red-500"
+                              : "text-gray-600"
+                        }`}
+                      >
+                        {row.status}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={14}
+                      className="text-center py-10 text-gray-500"
+                    >
+                      No records found
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={14} className="text-center py-6 text-gray-500">
-                    No records found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* FOOTER */}
-        <div className="flex justify-between items-center mt-4 text-gray-600">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 text-gray-600 text-sm">
           <span>
             Showing {filteredData.length} of {data.length}
           </span>

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Lock, User, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../../config/api";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -22,16 +23,13 @@ const AdminLogin = () => {
     setLoading(true);
 
     try {
-      const res = await fetch(
-        "https://logistics-bnqu.onrender.com/api/admin/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ username, password }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/admin/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
       const data = await res.json();
 

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { API_BASE_URL } from "../config/api";
 
 const DocumentReuploadCard = ({ doc, remark, onUploaded }) => {
   const token = localStorage.getItem("token");
@@ -12,16 +13,13 @@ const DocumentReuploadCard = ({ doc, remark, onUploaded }) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(
-      `https://logistics-bnqu.onrender.com/api/user/documents/${doc}`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      }
-    );
+    const res = await fetch(`${API_BASE_URL}/api/user/documents/${doc}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
 
     const data = await res.json();
 

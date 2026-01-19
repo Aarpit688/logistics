@@ -3,7 +3,9 @@ import MSMEList from "../components/MSMEList";
 
 const MSMEDhl = () => {
   return (
-    <div className={`w-[calc(100vw-20rem)] overflow-x-hidden`}>
+    <div
+      className={`lg:w-[calc(100vw-20rem)] w-[calc(100vw-3rem)] overflow-x-hidden`}
+    >
       <MSMEList />
     </div>
   );

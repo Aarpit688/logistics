@@ -16,7 +16,7 @@ const storage = multer.diskStorage({
 
   filename: function (req, file, cb) {
     const uniqueName = `${Date.now()}-${Math.round(
-      Math.random() * 1e9
+      Math.random() * 1e9,
     )}${path.extname(file.originalname)}`;
 
     cb(null, uniqueName);
@@ -26,15 +26,18 @@ const storage = multer.diskStorage({
 export const uploadDocuments = multer({
   storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 🔒 5MB per file
+    fileSize: 10 * 1024 * 1024, // 🔒 5MB per file
   },
 }).fields([
-  { name: "gst", maxCount: 1 },
-  { name: "iec", maxCount: 1 },
-  { name: "pan", maxCount: 1 },
+  // ✅ renamed keys (no clash with text fields)
+  { name: "gstDoc", maxCount: 1 },
+  { name: "iecDoc", maxCount: 1 },
+  { name: "panDoc", maxCount: 1 },
+  { name: "stampDoc", maxCount: 1 },
+
+  // ✅ optional docs (these don't clash with schema text fields)
   { name: "aadhar", maxCount: 1 },
   { name: "lut", maxCount: 1 },
-  { name: "stamp", maxCount: 1 },
   { name: "signature", maxCount: 1 },
   { name: "photo", maxCount: 1 },
 ]);

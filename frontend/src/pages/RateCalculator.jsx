@@ -5,6 +5,7 @@ import DomesticRateCalculator from "../components/DomesticRateCalculator";
 import ExportRateCalculator from "../components/ExportRateCalculator";
 import ImportRateCalculator from "../components/ImportRateCalculator";
 import CalculatedRateCalculator from "../components/CalculatedRateCalculator";
+import { useNavigate } from "react-router-dom";
 
 const tabs = [
   { id: "domestic", label: "Domestic", icon: Home },
@@ -20,6 +21,7 @@ const tabs = [
 
 export default function RateCalculator() {
   const [activeTab, setActiveTab] = useState("domestic");
+  const navigate = useNavigate();
 
   // ✅ rates data
   const [rates, setRates] = useState([]);
@@ -38,6 +40,8 @@ export default function RateCalculator() {
     setShowRates(false);
     setRates([]);
     setRatesMeta(null);
+
+    setBookingData(null);
   };
 
   const handleTabChange = (tabId) => {
@@ -45,11 +49,22 @@ export default function RateCalculator() {
     handleResetAll(); // ✅ switching tab hides rates too
   };
 
+  // ✅ called when Book Shipment is clicked
+  const handleBookShipment = (selectedRate) => {
+    if (!ratesMeta) return;
+
+    navigate("/book-shipment", {
+      state: {
+        tab: activeTab,
+        rate: selectedRate,
+        meta: ratesMeta,
+      },
+    });
+  };
+
   return (
     <div className="w-full">
-      {/* ✅ keeps UI like screenshot - centered */}
       <div className="mx-auto max-w-7xl">
-        {/* ✅ exact spacing + left width */}
         <div className="grid grid-cols-1 xl:grid-cols-[520px_1fr] gap-6 items-start">
           {/* LEFT */}
           <div className="w-full max-w-xl">
@@ -128,7 +143,11 @@ export default function RateCalculator() {
           {/* RIGHT */}
           {showRates ? (
             <div className="w-full">
-              <CalculatedRateCalculator rates={rates} meta={ratesMeta} />
+              <CalculatedRateCalculator
+                rates={rates}
+                meta={ratesMeta}
+                onBookShipment={handleBookShipment} // ✅ NEW
+              />
             </div>
           ) : null}
         </div>

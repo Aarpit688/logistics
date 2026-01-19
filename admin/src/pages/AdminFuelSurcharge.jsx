@@ -8,8 +8,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-
-const API_BASE = "https://logistics-bnqu.onrender.com/api/admin/fuel-surcharge";
+import { API_BASE_URL } from "../../config/api";
 
 const AdminFuelSurcharge = () => {
   const token = localStorage.getItem("adminToken");
@@ -23,7 +22,7 @@ const AdminFuelSurcharge = () => {
   /* ---------------- FETCH ---------------- */
   const fetchFuel = async () => {
     setLoading(true);
-    const res = await fetch(API_BASE, {
+    const res = await fetch(API_BASE_URL, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -75,20 +74,20 @@ const AdminFuelSurcharge = () => {
                 },
               },
             }
-          : row
-      )
+          : row,
+      ),
     );
   };
 
   const updateVendor = (id, value) => {
     setDraftData((prev) =>
-      prev.map((row) => (row.id === id ? { ...row, vendor: value } : row))
+      prev.map((row) => (row.id === id ? { ...row, vendor: value } : row)),
     );
   };
 
   /* ---------------- SAVE ---------------- */
   const saveVendor = async (row) => {
-    await fetch(`${API_BASE}/${row.id}`, {
+    await fetch(`${API_BASE_URL}/${row.id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -115,7 +114,7 @@ const AdminFuelSurcharge = () => {
       upcoming: null,
     };
 
-    await fetch(API_BASE, {
+    await fetch(API_BASE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -131,7 +130,7 @@ const AdminFuelSurcharge = () => {
   const deleteVendor = async (id) => {
     if (!window.confirm("Delete this vendor permanently?")) return;
 
-    await fetch(`${API_BASE}/${id}`, {
+    await fetch(`${API_BASE_URL}/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -271,7 +270,7 @@ const AdminFuelSurcharge = () => {
                                       row.history[section]?.[field]
                                         ? row.history[section][field].slice(
                                             0,
-                                            10
+                                            10,
                                           )
                                         : row.history[section]?.[field] || ""
                                     }
@@ -280,7 +279,7 @@ const AdminFuelSurcharge = () => {
                                         row.id,
                                         section,
                                         field,
-                                        e.target.value
+                                        e.target.value,
                                       )
                                     }
                                     className={`w-full mb-2 px-2 py-1 rounded ${
@@ -290,7 +289,7 @@ const AdminFuelSurcharge = () => {
                                     }`}
                                   />
                                 );
-                              }
+                              },
                             )}
                           </div>
                         ))}

@@ -17,6 +17,7 @@ import { registerMsme, getMyMsmes } from "../controllers/msmeController.js";
 import { uploadDocuments } from "../middlewares/uploadMiddleware.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { getFinalFuel } from "../controllers/fuelSurchargeController.js";
+import { createSpotPricingEnquiry } from "../controllers/spotPricingController.js";
 
 const router = express.Router();
 
@@ -45,7 +46,7 @@ router.post(
   "/msme",
   protect,
   uploadDocuments, // same multer
-  registerMsme
+  registerMsme,
 );
 
 router.get("/msme", protect, getMyMsmes);
@@ -54,5 +55,7 @@ router.get("/msme", protect, getMyMsmes);
    FUEL
 =========================== */
 router.get("/get-fuel-surcharge", protect, getFinalFuel);
+
+router.post("/spot-pricing/enquiry", createSpotPricingEnquiry);
 
 export default router;

@@ -33,20 +33,17 @@ const ChangePasswordModal = ({ onClose }) => {
 
     setLoading(true);
     try {
-      const res = await fetch(
-        "https://logistics-bnqu.onrender.com/api/auth/change-password",
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            currentPassword: form.currentPassword,
-            newPassword: form.newPassword,
-          }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword: form.currentPassword,
+          newPassword: form.newPassword,
+        }),
+      });
 
       const data = await res.json();
 

@@ -11,6 +11,9 @@ import {
   // 🔥 MSME controllers are NOW here
   getAllMsmesAdmin,
   updateMsmeStatus,
+  getAllSpotPricingEnquiries,
+  getSpotPricingEnquiryById,
+  updateSpotPricingAdminQuote,
 } from "../controllers/adminController.js";
 
 import {
@@ -65,7 +68,7 @@ router.post(
   "/country-zones/upload",
   adminAuth,
   uploadExcel.single("file"),
-  uploadCountryZones
+  uploadCountryZones,
 );
 
 // List/search countries
@@ -76,5 +79,12 @@ router.get("/country-zones/:country", adminAuth, getCountryZones);
 
 // Delete all country zones (reset import)
 router.delete("/country-zones", adminAuth, deleteAllCountryZones);
+
+// ✅ SpotPricing Admin
+router.get("/spot-pricing", adminAuth, getAllSpotPricingEnquiries);
+router.get("/spot-pricing/:id", adminAuth, getSpotPricingEnquiryById);
+
+// ✅ Quote update route
+router.patch("/spot-pricing/:id/quote", adminAuth, updateSpotPricingAdminQuote);
 
 export default router;

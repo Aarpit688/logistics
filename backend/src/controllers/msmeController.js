@@ -5,18 +5,26 @@ import Msme from "../models/Msme.js";
 ================================ */
 export const registerMsme = async (req, res) => {
   try {
+    // ✅ safety: avoid Array for iec/pan if duplicate keys come somehow
+    const normalize = (v) => (Array.isArray(v) ? v[0] : v);
+
     const msme = await Msme.create({
       user: req.user.id,
 
       ...req.body,
 
+      iec: normalize(req.body.iec),
+      pan: normalize(req.body.pan),
+
       documents: {
-        gst: req.files?.gst?.[0]?.path,
-        iec: req.files?.iec?.[0]?.path,
-        pan: req.files?.pan?.[0]?.path,
+        gst: req.files?.gstDoc?.[0]?.path,
+        iec: req.files?.iecDoc?.[0]?.path,
+        pan: req.files?.panDoc?.[0]?.path,
+        stamp: req.files?.stampDoc?.[0]?.path,
+
+        // optional documents
         aadhar: req.files?.aadhar?.[0]?.path,
         lut: req.files?.lut?.[0]?.path,
-        stamp: req.files?.stamp?.[0]?.path,
         signature: req.files?.signature?.[0]?.path,
         photo: req.files?.photo?.[0]?.path,
       },
