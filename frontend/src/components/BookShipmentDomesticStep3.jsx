@@ -628,7 +628,7 @@ export default function BookShipmentDomesticStep3({
         <button
           type="button"
           onClick={handleAddDoc}
-          className="mt-4 text-sm font-extrabold text-[#2563eb] hover:underline"
+          className="mt-4 text-sm font-bold hover:underline"
         >
           + ADD ANOTHER
         </button>
@@ -649,7 +649,7 @@ export default function BookShipmentDomesticStep3({
           onClick={handleNext}
           className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md transition hover:bg-gray-900 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-black/20"
         >
-          Submit
+          Next
         </button>
       </div>
 

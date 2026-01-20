@@ -341,7 +341,7 @@ function Field({
           "mt-2 flex items-center overflow-hidden rounded-md bg-white shadow-sm",
           invalid
             ? "border border-red-300 focus-within:ring-2 focus-within:ring-red-200"
-            : "border border-[#dbeafe] focus-within:ring-2 focus-within:ring-[#f2b632]/40",
+            : "border border-[#dbeafe] focus-within:ring-2 focus-within:ring-black/50",
         ].join(" ")}
       >
         <div

@@ -1,120 +1,288 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo } from "react";
 
-export default function BookShipmentExport({ prefill }) {
-  const [originCountry] = useState("India");
-  const [originPincode, setOriginPincode] = useState("");
-  const [originCityState, setOriginCityState] = useState("");
+import BookShipmentExportStep1 from "./BookShipmentExportStep1";
+import BookShipmentExportStep2 from "./BookShipmentExportStep2";
+import BookShipmentExportStep3 from "./BookShipmentExportStep3";
+import BookShipmentExportStep4 from "./BookShipmentExportStep4";
 
-  const [destinationCountry, setDestinationCountry] = useState("");
-  const [destinationZipcode, setDestinationZipcode] = useState("");
-  const [destinationCityState, setDestinationCityState] = useState("");
+import {
+  calcActualWeightFromBoxes,
+  calcVolumetricWeight,
+  calcChargeableWeight,
+  generateVendorRates,
+} from "../utils/rateEngine";
 
-  // ✅ Prefill only if coming from calculator
-  useEffect(() => {
-    if (!prefill?.meta || prefill?.tab !== "export") {
-      // opened directly → blank
-      setOriginPincode("");
-      setOriginCityState("");
-      setDestinationCountry("");
-      setDestinationZipcode("");
-      setDestinationCityState("");
-      return;
+/** ✅ final backend payload optimizer (EXPORT) */
+function buildExportBookingPayload(data) {
+  const shipment = data?.shipment || {};
+  const extra = data?.extra || {};
+  const addresses = data?.addresses || {};
+  const selectedRate = data?.selectedRate || null;
+
+  const units = extra?.units || {};
+  const shipmentExtra = extra?.shipment || {};
+  const boxes = extra?.boxes || {};
+
+  const shipmentType = shipment.shipmentType || "Non-Document";
+  const isDocument = shipmentType === "Document";
+  const isNonDocument = shipmentType === "Non-Document";
+
+  const boxesRows = boxes?.rows || [];
+
+  // ✅ weights
+  const actualWeight = isNonDocument
+    ? calcActualWeightFromBoxes(boxesRows)
+    : Number(shipmentExtra.docWeight || 0);
+
+  const volumetricWeight = isNonDocument
+    ? calcVolumetricWeight({
+        shipmentType,
+        boxesRows,
+        dimensionUnit: units.dimensionUnit || "CM",
+        weightUnit: units.weightUnit || "KG",
+      })
+    : 0;
+
+  const chargeableWeight = calcChargeableWeight({
+    actualWeight,
+    volumetricWeight,
+  });
+
+  /** ✅ Strip File objects into metadata for JSON
+   * Files will go separately in FormData
+   */
+  const docs = Array.isArray(addresses.documents) ? addresses.documents : [];
+  const docsMeta = docs.map((d) => ({
+    type: d.type,
+    otherName: d.otherName || "",
+    fileName: d.file?.name || "",
+    fileType: d.file?.type || "",
+    fileSize: d.file?.size || 0,
+  }));
+
+  /** ✅ final optimized JSON payload (EXPORT) */
+  const payload = {
+    shipment: {
+      shipmentType,
+      // origin fixed India, destination selected
+      originCountry: shipment.originCountry || "INDIA",
+      destinationCountry: shipment.destinationCountry || "",
+
+      // origin (India)
+      originPincode: shipment.originPincode || "",
+      originCity: shipment.originCity || "",
+      originState: shipment.originState || "",
+
+      // destination (international)
+      destinationZip: shipment.destZip || "",
+      destinationCity: shipment.destCity || "",
+      destinationState: shipment.destState || "",
+    },
+
+    units: {
+      weightUnit: units.weightUnit || "KG",
+      currencyUnit: units.currencyUnit || "INR",
+      dimensionUnit: units.dimensionUnit || "CM",
+    },
+
+    shipmentDetails: {
+      referenceNumber: shipmentExtra.referenceNumber || "",
+      isCOD: !!shipmentExtra.isCOD,
+
+      ...(isNonDocument
+        ? {
+            contentDescription: shipmentExtra.contentDescription || "",
+            declaredValue: Number(shipmentExtra.declaredValue || 0),
+            // export may not use ewaybill but keeping optional
+            ewaybillNumber: shipmentExtra.ewaybillNumber || "",
+          }
+        : {
+            docWeight: Number(shipmentExtra.docWeight || 0),
+          }),
+    },
+
+    package: isNonDocument
+      ? {
+          boxesCount: Number(boxes.boxesCount || 0),
+          rows: boxesRows.map((r) => ({
+            qty: Number(r.qty || 0),
+            weight: Number(r.weight || 0),
+            length: Number(r.length || 0),
+            breadth: Number(r.breadth || 0),
+            height: Number(r.height || 0),
+          })),
+        }
+      : null,
+
+    weights: {
+      actualWeight: Number(actualWeight.toFixed(2)),
+      volumetricWeight: Number(volumetricWeight.toFixed(2)),
+      chargeableWeight: Number(chargeableWeight.toFixed(2)),
+    },
+
+    addresses: {
+      sender: addresses.sender || {},
+      receiver: addresses.receiver || {},
+    },
+
+    documents: docsMeta,
+
+    selectedVendor: selectedRate
+      ? {
+          id: selectedRate.id,
+          vendorCode: selectedRate.vendorCode,
+          tat: selectedRate.tat,
+          chargeableWeight: selectedRate.chargeableWeight,
+          totalPrice: selectedRate.price,
+          breakup: selectedRate.breakup || [],
+        }
+      : null,
+  };
+
+  return payload;
+}
+
+/** ✅ create FormData (JSON + files) */
+function buildExportFormData(data) {
+  const payload = buildExportBookingPayload(data);
+
+  const fd = new FormData();
+  fd.append("payload", JSON.stringify(payload));
+
+  const docs = Array.isArray(data?.addresses?.documents)
+    ? data.addresses.documents
+    : [];
+
+  docs.forEach((d, idx) => {
+    if (d?.file) {
+      fd.append(`documents[${idx}]`, d.file);
     }
+  });
 
-    const meta = prefill.meta;
+  return { payload, formData: fd };
+}
 
-    setOriginPincode(meta.origin || "");
-    setDestinationCountry(meta.destinationCountry || "");
-    setDestinationZipcode(meta.destination || "");
+export default function BookShipmentExport({
+  step,
+  data,
+  onChange,
+  onNext,
+  onBack,
+}) {
+  /** ✅ Create rates dynamically from entered details */
+  const rates = useMemo(() => {
+    const shipment = data?.shipment || {};
+    const extra = data?.extra || {};
 
-    setOriginCityState(meta.originCityState || "");
-    setDestinationCityState(meta.destCityState || "");
-  }, [prefill]);
+    const units = extra?.units || {};
+    const shipmentExtra = extra?.shipment || {};
+    const boxes = extra?.boxes || {};
 
-  // mock auto-fill (replace with API later)
-  useEffect(() => {
-    if (originPincode.length === 6 && !originCityState) {
-      setOriginCityState("Auto filled city/state");
-    }
-  }, [originPincode]); // eslint-disable-line
+    const shipmentType = shipment.shipmentType || "Non-Document";
+    const isNonDocument = shipmentType === "Non-Document";
 
-  useEffect(() => {
-    if (destinationZipcode && !destinationCityState) {
-      setDestinationCityState("Auto filled city/state");
-    }
-  }, [destinationZipcode]); // eslint-disable-line
+    // ✅ Export inputs
+    const originPincode = shipment.originPincode || "";
+    const destinationCountry = shipment.destinationCountry || "";
 
-  return (
-    <div className="w-full">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        {/* Origin */}
-        <div>
-          <label className="block text-sm font-extrabold text-black">
-            Origin Country
-          </label>
-          <input
-            disabled
-            value="India"
-            className="mt-2 h-11 w-full rounded-md border border-black/10 px-4 text-sm font-bold bg-gray-50 cursor-not-allowed"
-          />
+    const destZip = shipment.destZip || "";
+    const destCity = shipment.destCity || "";
 
-          <label className="mt-5 block text-sm font-extrabold text-black">
-            Origin Pincode
-          </label>
-          <input
-            value={originPincode}
-            onChange={(e) =>
-              setOriginPincode(e.target.value.replace(/\D/g, ""))
-            }
-            maxLength={6}
-            placeholder="Origin pincode"
-            className="mt-2 h-11 w-full rounded-md border border-black/10 px-4 text-sm font-semibold outline-none"
-          />
+    // weights
+    const actualWeight = isNonDocument
+      ? calcActualWeightFromBoxes(boxes?.rows || [])
+      : Number(shipmentExtra.docWeight || 0);
 
-          <label className="mt-5 block text-sm font-extrabold text-black">
-            Origin City / State
-          </label>
-          <input
-            value={originCityState}
-            onChange={(e) => setOriginCityState(e.target.value)}
-            placeholder="Auto filled city/state"
-            className="mt-2 h-11 w-full rounded-md border border-black/10 px-4 text-sm font-semibold outline-none"
-          />
-        </div>
+    const volumetricWeight = isNonDocument
+      ? calcVolumetricWeight({
+          shipmentType,
+          boxesRows: boxes?.rows || [],
+          dimensionUnit: units.dimensionUnit || "CM",
+          weightUnit: units.weightUnit || "KG",
+        })
+      : 0;
 
-        {/* Destination */}
-        <div>
-          <label className="block text-sm font-extrabold text-black">
-            Destination Country
-          </label>
-          <input
-            value={destinationCountry}
-            onChange={(e) => setDestinationCountry(e.target.value)}
-            placeholder="Destination country"
-            className="mt-2 h-11 w-full rounded-md border border-black/10 px-4 text-sm font-semibold outline-none"
-          />
+    const chargeableWeight = calcChargeableWeight({
+      actualWeight,
+      volumetricWeight,
+    });
 
-          <label className="mt-5 block text-sm font-extrabold text-black">
-            Destination Zipcode
-          </label>
-          <input
-            value={destinationZipcode}
-            onChange={(e) => setDestinationZipcode(e.target.value)}
-            placeholder="Destination zipcode"
-            className="mt-2 h-11 w-full rounded-md border border-black/10 px-4 text-sm font-semibold outline-none"
-          />
+    // COD (normally false for export, but still allowed if you enable)
+    const isCOD = !!shipmentExtra.isCOD;
 
-          <label className="mt-5 block text-sm font-extrabold text-black">
-            Destination City / State
-          </label>
-          <input
-            value={destinationCityState}
-            onChange={(e) => setDestinationCityState(e.target.value)}
-            placeholder="Auto filled city/state"
-            className="mt-2 h-11 w-full rounded-md border border-black/10 px-4 text-sm font-semibold outline-none"
-          />
-        </div>
-      </div>
-    </div>
-  );
+    // ✅ generate only if required inputs exist
+    if (
+      !originPincode ||
+      !destinationCountry ||
+      !destZip ||
+      chargeableWeight <= 0
+    )
+      return [];
+
+    return generateVendorRates({
+      // ✅ use same interface, but include export destination inputs
+      originPincode,
+      destPincode: destZip, // for export, treat zip as destination code
+      shipmentType: "EXPORT",
+      isCOD,
+      chargeableWeight,
+
+      // extra signals you may use inside engine (optional)
+      destinationCountry,
+      destinationCity: destCity,
+    });
+  }, [data]);
+
+  /** ✅ final submit */
+  const finalSubmit = () => {
+    const { payload, formData } = buildExportFormData(data);
+
+    // payload & formData ready for backend
+    onNext?.({ payload, formData });
+  };
+
+  if (step === 1) {
+    return (
+      <BookShipmentExportStep1
+        data={data}
+        onChange={onChange}
+        onNext={onNext}
+      />
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <BookShipmentExportStep2
+        data={data}
+        onChange={onChange}
+        onNext={onNext}
+        onBack={onBack}
+      />
+    );
+  }
+
+  if (step === 3) {
+    return (
+      <BookShipmentExportStep3
+        data={data}
+        onChange={onChange}
+        onNext={onNext}
+        onBack={onBack}
+      />
+    );
+  }
+
+  if (step === 4) {
+    return (
+      <BookShipmentExportStep4
+        data={{ ...data, rates }}
+        onChange={onChange}
+        onNext={finalSubmit}
+        onBack={onBack}
+      />
+    );
+  }
+
+  return null;
 }
