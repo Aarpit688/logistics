@@ -1,10 +1,10 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" },
     {
       "source": "/api/proxy/:path*",
       "destination": "https://devapiv2.skart-express.com/api/v1/:path*"
-    }
+    },
+    { "source": "/(.*)", "destination": "/" }
   ],
   "build": {
     "env": {
