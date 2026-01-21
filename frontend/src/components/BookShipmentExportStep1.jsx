@@ -61,7 +61,6 @@ async function checkZipcodeAPI(countryId, zipcode) {
 
     const json = await res.json();
 
-    // Return the full array of options so the user can choose
     if (json.statusCode === 200 && Array.isArray(json.data)) {
       return json.data;
     }
@@ -88,7 +87,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
   // UI State
   const [originLoading, setOriginLoading] = useState(false);
   const [originError, setOriginError] = useState("");
-  const [destCityLocked, setDestCityLocked] = useState(false);
   const [missingFields, setMissingFields] = useState({});
   const [formError, setFormError] = useState("");
 
@@ -171,14 +169,10 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
   /** 🟢 Zipcode Search Logic */
   useEffect(() => {
     if (!destZip || destZip.length < 3 || !destinationCountryId) {
-      if (!destZip) setDestCityLocked(false);
       setZipOptions([]);
       setShowZipDropdown(false);
       return;
     }
-
-    // Don't search if we just clicked an option (zipcode matches options)
-    // But since zipcodes can be duplicates, we rely on user interaction to close dropdown.
 
     const timer = setTimeout(async () => {
       setZipLoading(true);
@@ -187,12 +181,9 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
       if (results && results.length > 0) {
         setZipOptions(results);
         setShowZipDropdown(true);
-        // Don't auto-lock yet, let user pick from dropdown
-        setDestCityLocked(false);
       } else {
         setZipOptions([]);
         setShowZipDropdown(false);
-        setDestCityLocked(false); // Allow manual if not found
       }
       setZipLoading(false);
     }, 800);
@@ -384,7 +375,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                         setCountryQuery(c.country_name);
                         setDestinationCountryId(c.country_id);
                         setShowCountryDropdown(false);
-                        setDestCityLocked(false);
                       }}
                       className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700"
                     >
@@ -399,7 +389,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
             </div>
 
             {/* ✅ DESTINATION ZIP - Custom Dropdown (Z-Index 40) */}
-            {/* We use z-40 so it's above city/state but below Country if they overlap */}
             <div ref={zipWrapperRef} className="relative z-40">
               <Field
                 label="DESTINATION ZIP CODE"
@@ -448,11 +437,10 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                       onClick={() => {
                         // User selects a specific City/State for this zipcode
                         patchShipment({
-                          destZip: item.zipcode, // Ensure zip is consistent
+                          destZip: item.zipcode,
                           destCity: item.city_area?.toUpperCase() || "",
                           destState: item.state?.toUpperCase() || "",
                         });
-                        setDestCityLocked(true);
                         setShowZipDropdown(false);
                       }}
                       className="block w-full border-b border-gray-50 px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 last:border-0"
@@ -469,6 +457,7 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               )}
             </div>
 
+            {/* ✅ DESTINATION CITY - Fully Editable */}
             <Field
               label="DESTINATION CITY"
               required
@@ -478,15 +467,15 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               <input
                 type="text"
                 value={destCity}
-                readOnly={destCityLocked}
                 onChange={(e) =>
                   patchShipment({ destCity: e.target.value.toUpperCase() })
                 }
                 placeholder="Destination city"
-                className={`h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af] ${destCityLocked ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
 
+            {/* ✅ DESTINATION STATE - Fully Editable */}
             <Field
               label="DESTINATION STATE"
               required
@@ -496,12 +485,11 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               <input
                 type="text"
                 value={destState}
-                readOnly={destCityLocked}
                 onChange={(e) =>
                   patchShipment({ destState: e.target.value.toUpperCase() })
                 }
                 placeholder="Destination state"
-                className={`h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af] ${destCityLocked ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
           </div>

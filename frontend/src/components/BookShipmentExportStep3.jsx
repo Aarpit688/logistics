@@ -12,7 +12,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 
-/** ✅ India Post API (for sender origin only in export too if origin is India) */
+/** ✅ India Post API */
 async function fetchPincodeDetails(pincode) {
   const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
   const data = await res.json();
@@ -30,14 +30,13 @@ async function fetchPincodeDetails(pincode) {
   };
 }
 
-/** ✅ Receiver ID types (image) */
+/** ✅ Constants */
 const RECEIVER_ID_TYPES = [
   { value: "VAT", label: "VAT" },
   { value: "EORI", label: "EORI" },
   { value: "OTHER", label: "OTHER" },
 ];
 
-/** ✅ Sender KYC types (image) */
 const SENDER_KYC_TYPES = [
   { value: "GST", label: "GST" },
   { value: "AADHAR", label: "AADHAR" },
@@ -46,14 +45,12 @@ const SENDER_KYC_TYPES = [
   { value: "PASSPORT", label: "PASSPORT" },
 ];
 
-/** ✅ Tax Payment Option (image) */
 const TAX_PAYMENT_OPTIONS = [
   { value: "IGST", label: "IGST" },
   { value: "BOND", label: "BOND" },
   { value: "NOT_APP", label: "NOT APP" },
 ];
 
-/** ✅ document uploader: Export Step3 (KYC) */
 const DOCUMENT_TYPES = [
   { value: "KYC", label: "KYC DOCUMENT" },
   { value: "OTHER", label: "OTHER" },
@@ -65,22 +62,14 @@ const makeEmptyDocRow = () => ({
   file: null,
 });
 
-/**
- * ✅ Export Step 3
- * - Sender + Receiver details (as image)
- * - Sender: Pin auto from Step1 + IndiaPost API for State
- * - Receiver: Zip from Step1, and user fills city/state/country
- * - Receiver: ID Type + ID Number
- * - Sender: IEC No, KYC Type, KYC No, Tax Payment Option, Upload KYC (2 mandatory)
- */
 export default function BookShipmentExportStep3({
   data,
   onChange,
   onNext,
   onBack,
 }) {
-  const shipment = data?.shipment || {}; // Step1 payload
-  const addresses = data?.addresses || {}; // Step3 payload section
+  const shipment = data?.shipment || {};
+  const addresses = data?.addresses || {};
 
   /** ✅ Step1 autofill */
   const originPincode = shipment.originPincode || "";
@@ -95,7 +84,11 @@ export default function BookShipmentExportStep3({
   /** ✅ sender / receiver payload */
   const sender = addresses.sender || {};
   const receiver = addresses.receiver || {};
-  const documents = addresses.documents || []; // export KYC docs
+
+  // ✅ Ensure documents is always an array
+  const documents = Array.isArray(addresses.documents)
+    ? addresses.documents
+    : [];
 
   /** ✅ local UI */
   const [missingFields, setMissingFields] = useState({});
@@ -111,22 +104,17 @@ export default function BookShipmentExportStep3({
   /** ✅ patch helpers */
   const patchAddresses = (patch) => {
     onChange?.({
-      addresses: {
-        ...addresses,
-        ...patch,
-      },
+      addresses: { ...addresses, ...patch },
     });
   };
 
   const patchSender = (patch) =>
     patchAddresses({ sender: { ...sender, ...patch } });
-
   const patchReceiver = (patch) =>
     patchAddresses({ receiver: { ...receiver, ...patch } });
-
   const patchDocs = (nextDocs) => patchAddresses({ documents: nextDocs });
 
-  /** ✅ Sender auto (India) */
+  /** ✅ Auto-calculated fields */
   const senderAuto = useMemo(
     () => ({
       pincode: originPincode,
@@ -143,27 +131,25 @@ export default function BookShipmentExportStep3({
     ],
   );
 
-  /** ✅ Receiver auto from step1 (zip + country) */
   const receiverAuto = useMemo(
     () => ({
       zip: destZip,
+      city: destCityFromStep1,
+      state: destStateFromStep1,
       country: destinationCountry,
     }),
-    [destZip, destinationCountry],
+    [destZip, destCityFromStep1, destStateFromStep1, destinationCountry],
   );
 
-  /** ✅ Origin state autofill via India Post */
+  /** ✅ Origin state autofill */
   useEffect(() => {
     let mounted = true;
-
     const run = async () => {
-      // origin pincode
       if (originPincode?.length === 6) {
         const d = await fetchPincodeDetails(originPincode);
         if (d && mounted) {
           setOriginState(d.state || originStateFromStep1 || "");
           setOriginCityLocal(originCity || d.city || "");
-
           patchSender({
             pincode: originPincode,
             city: originCity || d.city || "",
@@ -179,8 +165,6 @@ export default function BookShipmentExportStep3({
           country: "INDIA",
         });
       }
-
-      // receiver defaults
       patchReceiver({
         zipCode: destZip,
         country: destinationCountry || receiver.country || "",
@@ -188,7 +172,6 @@ export default function BookShipmentExportStep3({
         state: destStateFromStep1 || receiver.state || "",
       });
     };
-
     run();
     return () => {
       mounted = false;
@@ -196,20 +179,23 @@ export default function BookShipmentExportStep3({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originPincode, destZip]);
 
-  /** ✅ ensure KYC docs: 2 mandatory */
+  /** * ✅ FORCE 2 DOCUMENTS ON LOAD
+   * checks if current length < 2, if so, pushes empty rows and updates
+   */
   useEffect(() => {
-    if (!Array.isArray(documents) || documents.length < 2) {
-      const base = Array.isArray(documents) ? [...documents] : [];
-      while (base.length < 2) base.push(makeEmptyDocRow());
-      patchDocs(base);
+    if (documents.length < 2) {
+      const nextDocs = [...documents];
+      while (nextDocs.length < 2) {
+        nextDocs.push(makeEmptyDocRow());
+      }
+      patchDocs(nextDocs);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [documents.length]);
 
   /** ✅ validate */
   const validateStep3 = () => {
     const missing = {};
-
     const senderFinal = {
       ...sender,
       pincode: sender.pincode || senderAuto.pincode,
@@ -217,56 +203,43 @@ export default function BookShipmentExportStep3({
       state: sender.state || senderAuto.state,
       country: sender.country || "INDIA",
     };
-
     const receiverFinal = {
       ...receiver,
       zipCode: receiver.zipCode || receiverAuto.zip,
       country: receiver.country || receiverAuto.country,
-      city: receiver.city || destCityFromStep1,
-      state: receiver.state || destStateFromStep1,
+      city: receiver.city || receiverAuto.city,
+      state: receiver.state || receiverAuto.state,
     };
 
-    /** ✅ Sender validations (image) */
     if (!senderFinal.contactNumber) missing.senderContactNumber = true;
     if (!senderFinal.name) missing.senderName = true;
     if (!senderFinal.companyName) missing.senderCompanyName = true;
     if (!senderFinal.email) missing.senderEmail = true;
-
     if (!senderFinal.addressLine1) missing.senderAddressLine1 = true;
-    // addressLine2 optional (as image)
     if (!senderFinal.city) missing.senderCity = true;
     if (!senderFinal.state) missing.senderState = true;
     if (!senderFinal.country) missing.senderCountry = true;
     if (!senderFinal.pincode) missing.senderPincode = true;
-
     if (!senderFinal.iecNo) missing.senderIECNo = true;
-
     if (!senderFinal.kycType) missing.senderKycType = true;
     if (!senderFinal.kycNo) missing.senderKycNo = true;
-
     if (!senderFinal.taxPaymentOption) missing.senderTaxPaymentOption = true;
 
-    /** ✅ Receiver validations (image) */
     if (!receiverFinal.contactNumber) missing.receiverContactNumber = true;
     if (!receiverFinal.name) missing.receiverName = true;
     if (!receiverFinal.companyName) missing.receiverCompanyName = true;
     if (!receiverFinal.email) missing.receiverEmail = true;
-
     if (!receiverFinal.addressLine1) missing.receiverAddressLine1 = true;
-    // addressLine2 optional
     if (!receiverFinal.city) missing.receiverCity = true;
     if (!receiverFinal.state) missing.receiverState = true;
     if (!receiverFinal.country) missing.receiverCountry = true;
     if (!receiverFinal.zipCode) missing.receiverZip = true;
-
     if (!receiverFinal.idType) missing.receiverIdType = true;
     if (!receiverFinal.idNumber) missing.receiverIdNumber = true;
 
-    // delivery instructions optional
-
-    /** ✅ Documents: 2 mandatory KYC uploads */
-    const d0 = documents?.[0];
-    const d1 = documents?.[1];
+    // Validate first 2 docs
+    const d0 = documents[0];
+    const d1 = documents[1];
 
     if (!d0?.type) missing.doc0Type = true;
     if (!d0?.file) missing.doc0File = true;
@@ -276,63 +249,48 @@ export default function BookShipmentExportStep3({
     if (!d1?.file) missing.doc1File = true;
     if (d1?.type === "OTHER" && !d1?.otherName) missing.doc1OtherName = true;
 
-    // Optional docs
-    (documents || []).slice(2).forEach((d, idx) => {
-      const i = idx + 2;
-      const hasFile = !!d.file;
-      const hasType = !!d.type;
-
-      if (hasFile && !hasType) missing[`doc${i}Type`] = true;
-      if (d.type === "OTHER" && (hasFile || hasType) && !d.otherName)
-        missing[`doc${i}OtherName`] = true;
-    });
-
     setMissingFields(missing);
-
     if (Object.keys(missing).length > 0) {
       setFormError("Please fill the highlighted fields");
       return false;
     }
-
     setFormError("");
     return true;
   };
 
   const handleNext = () => {
-    // store auto
+    // ensure data is synced before valid
     patchSender({
       pincode: sender.pincode || senderAuto.pincode,
       city: sender.city || senderAuto.city,
       state: sender.state || senderAuto.state,
       country: sender.country || "INDIA",
     });
-
     patchReceiver({
       zipCode: receiver.zipCode || receiverAuto.zip,
       country: receiver.country || receiverAuto.country,
+      city: receiver.city || receiverAuto.city,
+      state: receiver.state || receiverAuto.state,
     });
 
-    const ok = validateStep3();
-    if (!ok) return;
-    onNext?.();
+    if (validateStep3()) onNext?.();
   };
 
-  /** ✅ doc handlers */
+  /** ✅ Doc Handlers */
   const updateDoc = (index, patch) => {
-    const next = [...(documents || [])];
+    const next = [...documents];
     next[index] = { ...next[index], ...patch };
     patchDocs(next);
   };
 
   const handleAddDoc = () => {
-    patchDocs([...(documents || []), makeEmptyDocRow()]);
+    patchDocs([...documents, makeEmptyDocRow()]);
   };
 
   const handleRemoveDoc = (index) => {
-    // keep 2 mandatory
-    if (index === 0 || index === 1) return;
+    if (index === 0 || index === 1) return; // Cannot delete mandatory
     const next = documents.filter((_, i) => i !== index);
-    patchDocs(next.length ? next : [makeEmptyDocRow(), makeEmptyDocRow()]);
+    patchDocs(next);
   };
 
   return (
@@ -343,14 +301,12 @@ export default function BookShipmentExportStep3({
         </h3>
       </div>
 
-      {/* ✅ Sender + Receiver blocks */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* ===================== Sender ===================== */}
         <div className="rounded-md border border-black/10 bg-white p-4">
           <h4 className="text-sm font-extrabold text-black tracking-wide">
             Sender Details
           </h4>
-
           <div className="mt-4 grid grid-cols-1 gap-4">
             <Field
               label="MOBILE NUMBER"
@@ -372,7 +328,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="NAME"
               required
@@ -387,7 +342,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="COMPANY NAME"
               required
@@ -402,7 +356,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="EMAIL ID"
               required
@@ -417,7 +370,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="ADDRESS LINE 1"
               required
@@ -432,7 +384,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="ADDRESS LINE 2"
               required={false}
@@ -447,8 +398,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
-            {/* City / Pin */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <LockedField
                 label="CITY"
@@ -465,8 +414,6 @@ export default function BookShipmentExportStep3({
                 value={senderAuto.pincode || ""}
               />
             </div>
-
-            {/* State / Country */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <LockedField
                 label="STATE"
@@ -483,8 +430,6 @@ export default function BookShipmentExportStep3({
                 value="INDIA"
               />
             </div>
-
-            {/* IEC No */}
             <Field
               label="IEC NO."
               required
@@ -499,8 +444,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
-            {/* KYC Type + KYC No (same row) */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field
                 label="KYC TYPE"
@@ -526,7 +469,6 @@ export default function BookShipmentExportStep3({
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
                 </div>
               </Field>
-
               <Field
                 label="KYC NO."
                 required
@@ -542,8 +484,6 @@ export default function BookShipmentExportStep3({
                 />
               </Field>
             </div>
-
-            {/* Tax Payment Option */}
             <Field
               label="TAX PAYMENT OPTION"
               required
@@ -578,7 +518,6 @@ export default function BookShipmentExportStep3({
           <h4 className="text-sm font-extrabold text-black tracking-wide">
             Receiver Details
           </h4>
-
           <div className="mt-4 grid grid-cols-1 gap-4">
             <Field
               label="MOBILE NO."
@@ -600,7 +539,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="NAME"
               required
@@ -615,7 +553,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="COMPANY NAME"
               required
@@ -630,7 +567,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="EMAIL ID"
               required
@@ -645,7 +581,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="ADDRESS LINE 1"
               required
@@ -662,7 +597,6 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="ADDRESS LINE 2"
               required={false}
@@ -679,26 +613,14 @@ export default function BookShipmentExportStep3({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
-            {/* City / Zip */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field
+              <LockedField
                 label="CITY"
                 required
                 invalid={missingFields.receiverCity}
                 icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
-              >
-                <input
-                  type="text"
-                  value={receiver.city || destCityFromStep1 || ""}
-                  onChange={(e) =>
-                    patchReceiver({ city: e.target.value.toUpperCase() })
-                  }
-                  placeholder="Enter city"
-                  className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-                />
-              </Field>
-
+                value={(receiverAuto.city || "").toUpperCase()}
+              />
               <LockedField
                 label="ZIP CODE"
                 required
@@ -707,26 +629,14 @@ export default function BookShipmentExportStep3({
                 value={receiverAuto.zip || ""}
               />
             </div>
-
-            {/* State / Country */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field
+              <LockedField
                 label="STATE"
                 required
                 invalid={missingFields.receiverState}
                 icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
-              >
-                <input
-                  type="text"
-                  value={receiver.state || destStateFromStep1 || ""}
-                  onChange={(e) =>
-                    patchReceiver({ state: e.target.value.toUpperCase() })
-                  }
-                  placeholder="Enter state"
-                  className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-                />
-              </Field>
-
+                value={(receiverAuto.state || "").toUpperCase()}
+              />
               <LockedField
                 label="COUNTRY"
                 required
@@ -735,8 +645,6 @@ export default function BookShipmentExportStep3({
                 value={(receiverAuto.country || "").toUpperCase()}
               />
             </div>
-
-            {/* ID Type + ID number */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field
                 label="ID TYPE"
@@ -762,7 +670,6 @@ export default function BookShipmentExportStep3({
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
                 </div>
               </Field>
-
               <Field
                 label="ID NUMBER"
                 required
@@ -778,8 +685,6 @@ export default function BookShipmentExportStep3({
                 />
               </Field>
             </div>
-
-            {/* Delivery instructions */}
             <Field
               label="DELIVERY INSTRUCTIONS"
               required={false}
@@ -800,7 +705,7 @@ export default function BookShipmentExportStep3({
         </div>
       </div>
 
-      {/* ✅ Upload KYC Docs (2 mandatory) */}
+      {/* ✅ Upload KYC Docs - Auto Shows 2 Fields */}
       <div className="mt-8 rounded-md border border-black/10 bg-white p-5">
         <h4 className="text-base font-extrabold text-black tracking-wide">
           Upload KYC
@@ -810,7 +715,7 @@ export default function BookShipmentExportStep3({
         </p>
 
         <div className="mt-5 space-y-4">
-          {(documents || []).map((doc, index) => {
+          {documents.map((doc, index) => {
             const isOther = doc.type === "OTHER";
             const isMandatory = index < 2;
 
@@ -820,7 +725,6 @@ export default function BookShipmentExportStep3({
                 className="rounded-md border border-black/10 bg-white p-4"
               >
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-center">
-                  {/* Doc type */}
                   <div className="md:col-span-4">
                     <select
                       value={doc.type}
@@ -838,17 +742,8 @@ export default function BookShipmentExportStep3({
                         </option>
                       ))}
                     </select>
-
-                    {missingFields[`doc${index}Type`] ? (
-                      <p className="mt-2 text-[11px] font-extrabold text-red-600">
-                        Select document type
-                      </p>
-                    ) : (
-                      <div className="mt-2 h-[14px]" />
-                    )}
                   </div>
 
-                  {/* Other name */}
                   {isOther ? (
                     <div className="md:col-span-3">
                       <input
@@ -858,59 +753,33 @@ export default function BookShipmentExportStep3({
                           updateDoc(index, { otherName: e.target.value })
                         }
                         placeholder="Document name"
-                        className={[
-                          "h-12 w-full rounded-md px-4 text-sm font-bold outline-none",
-                          missingFields[`doc${index}OtherName`]
-                            ? "border border-red-300 focus:ring-2 focus:ring-red-200"
-                            : "border border-black/10 focus:ring-2 focus:ring-black/10",
-                        ].join(" ")}
+                        className="h-12 w-full rounded-md border border-black/10 px-4 text-sm font-bold outline-none"
                       />
-
-                      {missingFields[`doc${index}OtherName`] ? (
-                        <p className="mt-2 text-[11px] font-extrabold text-red-600">
-                          Enter document name
-                        </p>
-                      ) : (
-                        <div className="mt-2 h-[14px]" />
-                      )}
                     </div>
                   ) : (
                     <div className="md:col-span-3" />
                   )}
 
-                  {/* upload */}
                   <div className="md:col-span-4">
                     <div className="flex items-center gap-3">
                       <label className="inline-flex h-12 cursor-pointer items-center justify-center rounded-md bg-gray-100 px-6 text-sm font-extrabold text-gray-900 hover:bg-gray-200 transition">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Choose File
+                        <Upload className="mr-2 h-4 w-4" /> Choose File
                         <input
                           type="file"
                           className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0] || null;
-                            updateDoc(index, { file });
-                          }}
+                          onChange={(e) =>
+                            updateDoc(index, {
+                              file: e.target.files?.[0] || null,
+                            })
+                          }
                         />
                       </label>
-
-                      <div className="text-sm font-bold text-gray-600">
+                      <div className="text-sm font-bold text-gray-600 truncate max-w-[150px]">
                         {doc.file?.name || "No file chosen"}
                       </div>
                     </div>
-
-                    {missingFields[`doc${index}File`] ||
-                    (index === 0 && missingFields.doc0File) ||
-                    (index === 1 && missingFields.doc1File) ? (
-                      <p className="mt-2 text-[11px] font-extrabold text-red-600">
-                        Upload {isMandatory ? "mandatory" : "a"} document
-                      </p>
-                    ) : (
-                      <div className="mt-2 h-[14px]" />
-                    )}
                   </div>
 
-                  {/* remove */}
                   <div className="md:col-span-1 flex md:justify-end">
                     {!isMandatory ? (
                       <button
@@ -940,7 +809,6 @@ export default function BookShipmentExportStep3({
         </button>
       </div>
 
-      {/* ✅ Back / Next */}
       <div className="mt-7 flex items-center justify-between gap-3">
         <button
           type="button"
@@ -949,7 +817,6 @@ export default function BookShipmentExportStep3({
         >
           Back
         </button>
-
         <button
           type="button"
           onClick={handleNext}
@@ -968,14 +835,12 @@ export default function BookShipmentExportStep3({
   );
 }
 
-/* ✅ Same UI Field */
 function Field({ label, required, icon, invalid, children }) {
   return (
     <div>
       <label className="block text-sm font-bold tracking-wide text-[#111827]">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-
       <div
         className={[
           "mt-2 flex items-center overflow-hidden rounded-md bg-white shadow-sm",
@@ -992,14 +857,12 @@ function Field({ label, required, icon, invalid, children }) {
         >
           {icon}
         </div>
-
         {children}
       </div>
     </div>
   );
 }
 
-/* ✅ Locked Field */
 function LockedField({ label, required, icon, invalid, value }) {
   return (
     <Field label={label} required={required} icon={icon} invalid={invalid}>
