@@ -1,5 +1,11 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/" }],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" },
+    {
+      "source": "/api/proxy/:path*",
+      "destination": "https://devapiv2.skart-express.com/api/v1/:path*"
+    }
+  ],
   "build": {
     "env": {
       "NPM_FLAGS": "--legacy-peer-deps"

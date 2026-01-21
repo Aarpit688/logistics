@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { MapPin, Map, Globe, Loader2 } from "lucide-react";
+import { MapPin, Map, Globe, Loader2, ChevronDown } from "lucide-react";
 
 /** ✅ India Post API (Origin only) */
 async function fetchPincodeDetails(pincode) {
@@ -27,12 +27,10 @@ async function fetchPincodeDetails(pincode) {
 async function searchCountryAPI(query) {
   if (!query) return [];
   try {
-    // Using the specific endpoint provided in your screenshot
-    const url = `https://devapiv2.skart-express.com/api/v1/booking/country/${query}?user_name=sgate&password=123456`;
+    const url = `/api/proxy/booking/country/${query}?user_name=sgate&password=123456`;
     const res = await fetch(url);
     const json = await res.json();
 
-    // The API returns { data: [...] }
     if (json.statusCode === 200 && Array.isArray(json.data)) {
       return json.data;
     }
@@ -43,11 +41,41 @@ async function searchCountryAPI(query) {
   }
 }
 
+/** ✅ Check Zipcode API */
+async function checkZipcodeAPI(countryId, zipcode) {
+  if (!countryId || !zipcode) return [];
+
+  try {
+    const res = await fetch(`/api/proxy/booking/check-zipcode`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_name: "sgate",
+        password: "123456",
+        country_id: countryId,
+        zipcode: zipcode,
+      }),
+    });
+
+    const json = await res.json();
+
+    // Return the full array of options so the user can choose
+    if (json.statusCode === 200 && Array.isArray(json.data)) {
+      return json.data;
+    }
+    return [];
+  } catch (error) {
+    console.error("Zipcode check failed", error);
+    return [];
+  }
+}
+
 export default function BookShipmentExportStep1({ data, onChange, onNext }) {
-  /** ✅ payload object */
   const shipment = data?.shipment || {};
 
-  /** ✅ fields */
+  // Fields
   const originCountry = shipment.originCountry || "INDIA";
   const destinationCountry = shipment.destinationCountry || "";
   const originPincode = shipment.originPincode || "";
@@ -57,30 +85,35 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
   const destCity = shipment.destCity || "";
   const destState = shipment.destState || "";
 
-  /** ✅ UI State */
+  // UI State
   const [originLoading, setOriginLoading] = useState(false);
   const [originError, setOriginError] = useState("");
+  const [destCityLocked, setDestCityLocked] = useState(false);
   const [missingFields, setMissingFields] = useState({});
   const [formError, setFormError] = useState("");
 
-  /** ✅ Autocomplete State */
+  // Country Autocomplete State
   const [countryQuery, setCountryQuery] = useState(destinationCountry);
+  const [destinationCountryId, setDestinationCountryId] = useState(
+    shipment.destinationCountryId || "",
+  );
   const [countryOptions, setCountryOptions] = useState([]);
   const [countryLoading, setCountryLoading] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const countryWrapperRef = useRef(null);
 
-  /** ✅ helper */
+  // Zipcode Autocomplete State
+  const [zipOptions, setZipOptions] = useState([]);
+  const [zipLoading, setZipLoading] = useState(false);
+  const [showZipDropdown, setShowZipDropdown] = useState(false);
+  const zipWrapperRef = useRef(null);
+
   const patchShipment = (patch) => {
     onChange?.({
-      shipment: {
-        ...shipment,
-        ...patch,
-      },
+      shipment: { ...shipment, ...patch },
     });
   };
 
-  /** ✅ Default fixed origin country */
   useEffect(() => {
     if (!shipment.originCountry) {
       patchShipment({ originCountry: "INDIA" });
@@ -88,12 +121,11 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** ✅ Sync local state if parent data changes */
   useEffect(() => {
     setCountryQuery(destinationCountry);
   }, [destinationCountry]);
 
-  /** ✅ Handle Outside Click to close dropdown */
+  // Close dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (
@@ -102,32 +134,31 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
       ) {
         setShowCountryDropdown(false);
       }
+      if (
+        zipWrapperRef.current &&
+        !zipWrapperRef.current.contains(event.target)
+      ) {
+        setShowZipDropdown(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  /** ✅ Debounced Country Search */
+  /** 🟢 Country Search Logic */
   useEffect(() => {
-    // Avoid re-fetching if the query matches what we just selected
-    if (countryQuery === destinationCountry) return;
+    if (countryQuery === destinationCountry && destinationCountryId) return;
 
     const timer = setTimeout(async () => {
       if (countryQuery.length >= 2) {
         setCountryLoading(true);
         const results = await searchCountryAPI(countryQuery);
-
-        // Filter out INDIA
         const filtered = results.filter(
           (c) => c.country_name?.toUpperCase() !== "INDIA",
         );
-
         setCountryOptions(filtered);
         setCountryLoading(false);
-        // Only show if we found results
-        if (filtered.length > 0) {
-          setShowCountryDropdown(true);
-        }
+        if (filtered.length > 0) setShowCountryDropdown(true);
       } else {
         setCountryOptions([]);
         setShowCountryDropdown(false);
@@ -135,28 +166,52 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [countryQuery, destinationCountry]);
+  }, [countryQuery, destinationCountry, destinationCountryId]);
 
-  /** ✅ Origin Pincode autofill */
+  /** 🟢 Zipcode Search Logic */
+  useEffect(() => {
+    if (!destZip || destZip.length < 3 || !destinationCountryId) {
+      if (!destZip) setDestCityLocked(false);
+      setZipOptions([]);
+      setShowZipDropdown(false);
+      return;
+    }
+
+    // Don't search if we just clicked an option (zipcode matches options)
+    // But since zipcodes can be duplicates, we rely on user interaction to close dropdown.
+
+    const timer = setTimeout(async () => {
+      setZipLoading(true);
+      const results = await checkZipcodeAPI(destinationCountryId, destZip);
+
+      if (results && results.length > 0) {
+        setZipOptions(results);
+        setShowZipDropdown(true);
+        // Don't auto-lock yet, let user pick from dropdown
+        setDestCityLocked(false);
+      } else {
+        setZipOptions([]);
+        setShowZipDropdown(false);
+        setDestCityLocked(false); // Allow manual if not found
+      }
+      setZipLoading(false);
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [destZip, destinationCountryId]);
+
   const validateOriginOnBlur = async () => {
-    if (!originPincode) return;
-    if (originPincode.length !== 6) {
-      setOriginError("Invalid Pincode");
+    if (!originPincode || originPincode.length !== 6) {
+      if (originPincode) setOriginError("Invalid Pincode");
       return;
     }
     try {
       setOriginLoading(true);
       setOriginError("");
       const d = await fetchPincodeDetails(originPincode);
-      if (!d) {
-        setOriginError("Invalid Pincode");
-      } else {
-        patchShipment({
-          originCity: d.city || "",
-          originState: d.state || "",
-        });
-        setOriginError("");
-      }
+      if (!d) setOriginError("Invalid Pincode");
+      else
+        patchShipment({ originCity: d.city || "", originState: d.state || "" });
     } catch {
       setOriginError("Invalid Pincode");
     } finally {
@@ -164,7 +219,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
     }
   };
 
-  /** ✅ Validation */
   const validateStep1 = () => {
     const missing = {};
     if (!originCountry) missing.originCountry = true;
@@ -177,19 +231,12 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
     if (!destState) missing.destState = true;
 
     setMissingFields(missing);
-
     if (Object.keys(missing).length > 0) {
       setFormError("All fields are required");
       return false;
     }
     setFormError("");
     return true;
-  };
-
-  const handleNext = () => {
-    const ok = validateStep1();
-    if (!ok) return;
-    onNext?.();
   };
 
   return (
@@ -206,7 +253,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
           <h4 className="text-sm font-extrabold text-black tracking-wide">
             Origin
           </h4>
-
           <div className="mt-4 grid grid-cols-1 gap-4">
             <Field
               label="ORIGIN COUNTRY"
@@ -220,24 +266,13 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 className="h-11 w-full cursor-not-allowed bg-gray-50 px-4 text-sm font-extrabold text-gray-900 outline-none"
               />
             </Field>
-
             <Field
               label="ORIGIN PIN CODE"
               required
               invalid={missingFields.originPincode}
               icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
-              hint={
-                originLoading
-                  ? "Validating..."
-                  : originError
-                    ? originError
-                    : originPincode?.length === 6 && originCity
-                      ? `${originCity}, ${originState}`
-                      : ""
-              }
-              hintType={
-                originError ? "error" : originCity ? "success" : "muted"
-              }
+              hint={originLoading ? "Validating..." : originError}
+              hintType={originError ? "error" : "muted"}
             >
               <input
                 type="text"
@@ -255,7 +290,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="ORIGIN CITY"
               required
@@ -272,7 +306,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
-
             <Field
               label="ORIGIN STATE"
               required
@@ -299,14 +332,13 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
           </h4>
 
           <div className="mt-4 grid grid-cols-1 gap-4">
-            {/* ✅ FIXED: Added 'relative z-50' to force this ABOVE the zip code field */}
+            {/* ✅ DESTINATION COUNTRY - Custom Dropdown (Z-Index 50) */}
             <div ref={countryWrapperRef} className="relative z-50">
               <Field
                 label="DESTINATION COUNTRY"
                 required
                 invalid={missingFields.destinationCountry}
                 icon={<Globe className="h-4 w-4 text-[#6b7280]" />}
-                hint={countryLoading ? "Fetching countries..." : ""}
               >
                 <div className="relative flex-1">
                   <input
@@ -314,9 +346,12 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                     value={countryQuery}
                     onChange={(e) => {
                       setCountryQuery(e.target.value);
-                      // If user changes text, clear the "official" selected value
                       if (e.target.value !== destinationCountry) {
-                        patchShipment({ destinationCountry: "" });
+                        patchShipment({
+                          destinationCountry: e.target.value,
+                          destinationCountryId: "",
+                        });
+                        setDestinationCountryId("");
                       }
                     }}
                     onFocus={() => {
@@ -326,7 +361,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                     placeholder="Type to search (e.g. Aus)"
                     className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
                   />
-
                   {countryLoading && (
                     <div className="absolute right-3 top-0 h-full flex items-center">
                       <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
@@ -335,17 +369,22 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 </div>
               </Field>
 
-              {/* ✅ Dropdown Results */}
+              {/* Country Dropdown */}
               {showCountryDropdown && countryOptions.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-xl">
+                <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-xl">
                   {countryOptions.map((c) => (
                     <button
                       key={c.country_id}
                       type="button"
                       onClick={() => {
-                        patchShipment({ destinationCountry: c.country_name });
+                        patchShipment({
+                          destinationCountry: c.country_name,
+                          destinationCountryId: c.country_id,
+                        });
                         setCountryQuery(c.country_name);
+                        setDestinationCountryId(c.country_id);
                         setShowCountryDropdown(false);
+                        setDestCityLocked(false);
                       }}
                       className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700"
                     >
@@ -359,24 +398,76 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               )}
             </div>
 
-            <Field
-              label="DESTINATION ZIP CODE"
-              required
-              invalid={missingFields.destZip}
-              icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <input
-                type="text"
-                value={destZip}
-                onChange={(e) =>
-                  patchShipment({
-                    destZip: e.target.value.replace(/[^\dA-Za-z-]/g, ""),
-                  })
+            {/* ✅ DESTINATION ZIP - Custom Dropdown (Z-Index 40) */}
+            {/* We use z-40 so it's above city/state but below Country if they overlap */}
+            <div ref={zipWrapperRef} className="relative z-40">
+              <Field
+                label="DESTINATION ZIP CODE"
+                required
+                invalid={missingFields.destZip}
+                icon={<MapPin className="h-4 w-4 text-[#6b7280]" />}
+                hint={
+                  zipLoading
+                    ? "Searching..."
+                    : !destinationCountryId && destZip
+                      ? "Select country first"
+                      : ""
                 }
-                placeholder="Enter zip code"
-                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-              />
-            </Field>
+                hintType={zipLoading ? "muted" : "error"}
+              >
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={destZip}
+                    onChange={(e) =>
+                      patchShipment({
+                        destZip: e.target.value.replace(/[^\dA-Za-z-]/g, ""),
+                      })
+                    }
+                    onFocus={() => {
+                      if (zipOptions.length > 0) setShowZipDropdown(true);
+                    }}
+                    placeholder="Enter zip code"
+                    className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+                  />
+                  {zipLoading && (
+                    <div className="absolute right-3 top-0 h-full flex items-center">
+                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                    </div>
+                  )}
+                </div>
+              </Field>
+
+              {/* Zipcode Dropdown */}
+              {showZipDropdown && zipOptions.length > 0 && (
+                <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-xl">
+                  {zipOptions.map((item, idx) => (
+                    <button
+                      key={`${item.zipcode}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        // User selects a specific City/State for this zipcode
+                        patchShipment({
+                          destZip: item.zipcode, // Ensure zip is consistent
+                          destCity: item.city_area?.toUpperCase() || "",
+                          destState: item.state?.toUpperCase() || "",
+                        });
+                        setDestCityLocked(true);
+                        setShowZipDropdown(false);
+                      }}
+                      className="block w-full border-b border-gray-50 px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 last:border-0"
+                    >
+                      <div className="font-bold text-gray-900">
+                        {item.zipcode}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {item.city_area}, {item.state}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <Field
               label="DESTINATION CITY"
@@ -387,11 +478,12 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               <input
                 type="text"
                 value={destCity}
+                readOnly={destCityLocked}
                 onChange={(e) =>
                   patchShipment({ destCity: e.target.value.toUpperCase() })
                 }
                 placeholder="Destination city"
-                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+                className={`h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af] ${destCityLocked ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </Field>
 
@@ -404,11 +496,12 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               <input
                 type="text"
                 value={destState}
+                readOnly={destCityLocked}
                 onChange={(e) =>
                   patchShipment({ destState: e.target.value.toUpperCase() })
                 }
                 placeholder="Destination state"
-                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+                className={`h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af] ${destCityLocked ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
               />
             </Field>
           </div>
@@ -418,7 +511,9 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
       <div className="mt-7 flex items-center justify-end">
         <button
           type="button"
-          onClick={handleNext}
+          onClick={() => {
+            if (validateStep1()) onNext?.();
+          }}
           className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md transition hover:bg-gray-900 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-black/20"
         >
           Next
@@ -430,18 +525,11 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
           {formError}
         </div>
       ) : null}
-
-      <p className="mt-4 text-xs text-gray-500">
-        Tip: Type the destination country name to search.
-      </p>
     </>
   );
 }
 
-/** * ✅ Field Component Update:
- * 1. Removed `overflow-hidden` so the dropdown isn't clipped.
- * 2. Added `rounded-l-md` to the icon container to maintain the visual style.
- */
+/** ✅ Field Component */
 function Field({
   label,
   required,
@@ -457,23 +545,19 @@ function Field({
       : hintType === "success"
         ? "text-emerald-700"
         : "text-gray-500";
-
   return (
     <div>
       <label className="block text-sm font-bold tracking-wide text-[#111827]">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-
-      {/* REMOVED overflow-hidden here */}
       <div
         className={[
           "mt-2 flex items-center rounded-md bg-white shadow-sm",
           invalid
-            ? "border border-red-300 focus-within:ring-2 focus-within:ring-red-200"
+            ? "border border-red-300 ring-1 ring-red-200"
             : "border border-[#dbeafe] focus-within:ring-2 focus-within:ring-black/50",
         ].join(" ")}
       >
-        {/* Added rounded-l-md here */}
         <div
           className={[
             "grid h-11 w-11 place-items-center border-r bg-white rounded-l-md",
@@ -484,7 +568,6 @@ function Field({
         </div>
         {children}
       </div>
-
       {hint ? (
         <p className={`mt-2 text-[11px] font-bold ${hintClass}`}>{hint}</p>
       ) : (
