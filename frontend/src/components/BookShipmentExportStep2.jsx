@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Scale,
-  Ruler,
-  IndianRupee,
-  PackageCheck,
   Boxes,
   Hash,
   ChevronDown,
   Plus,
-  Trash2,
+  Clock,
+  PackageCheck,
+  Weight,
+  ChevronUp,
+  X,
+  IndianRupee,
 } from "lucide-react";
 
 /* ✅ ---------- helpers ---------- */
@@ -23,93 +25,6 @@ function safeNum(v) {
   return Number.isNaN(n) ? 0 : n;
 }
 
-function normalizeRowsToBoxes(rows, boxesCount) {
-  const safe = rows.map((r) => ({
-    qty: clampInt(r.qty ?? 1, 1, 999999),
-    weight: r.weight ?? "",
-    length: r.length ?? "",
-    breadth: r.breadth ?? "",
-    height: r.height ?? "",
-  }));
-
-  if (!boxesCount || boxesCount < 1) return [];
-
-  let total = safe.reduce((acc, r) => acc + r.qty, 0);
-
-  if (safe.length === 0 || total === 0) {
-    return Array.from({ length: boxesCount }, () => ({
-      qty: 1,
-      weight: "",
-      length: "",
-      breadth: "",
-      height: "",
-    }));
-  }
-
-  while (total < boxesCount) {
-    safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
-    total += 1;
-  }
-
-  while (total > boxesCount && safe.length > 0) {
-    const last = safe[safe.length - 1];
-    const canReduce = last.qty - 1;
-
-    if (canReduce >= 1) {
-      last.qty -= 1;
-      total -= 1;
-    } else {
-      safe.pop();
-      total -= 1;
-    }
-  }
-
-  for (const r of safe) r.qty = Math.max(1, r.qty);
-
-  total = safe.reduce((acc, r) => acc + r.qty, 0);
-  while (total < boxesCount) {
-    safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
-    total += 1;
-  }
-
-  return safe;
-}
-
-function MiniInput({ label, invalid, ...props }) {
-  return (
-    <div>
-      <label className="block text-[11px] font-bold text-gray-500 tracking-wide">
-        {label}
-      </label>
-      <input
-        {...props}
-        className={[
-          "mt-2 h-10 w-full rounded-md px-3 text-sm font-semibold outline-none",
-          invalid
-            ? "border border-red-300 focus:ring-2 focus:ring-red-200"
-            : "border border-[#e5e7eb] text-[#111827] focus:ring-2 focus:ring-[#f2b632]/30",
-        ].join(" ")}
-      />
-    </div>
-  );
-}
-
-/* ✅ export constants */
-const SHIPMENT_TYPES = [
-  { value: "CSB-IV", label: "CSB-IV" },
-  { value: "CSB-V", label: "CSB-V" },
-  { value: "ECOMMERCE", label: "ECOMMERCE" },
-  { value: "DOCUMENT", label: "DOCUMENT" },
-  { value: "SAMPLE", label: "SAMPLE" },
-  { value: "GIFT", label: "GIFT" },
-];
-
-const TERMS_OPTIONS = ["DDU", "DDP", "CIF", "C&F", "DAP"];
-const EXPORT_FORMATS = [
-  { value: "B2B", label: "B2B" },
-  { value: "B2C", label: "B2C" },
-];
-
 function makeGoodsRow(boxNo = 1) {
   return {
     boxNo,
@@ -122,15 +37,79 @@ function makeGoodsRow(boxNo = 1) {
   };
 }
 
+/**
+ * ✅ SIMPLE SYNC HELPERS
+ * - Dimensions: always EXACTLY count rows
+ * - Goods: keep existing rows but ensure MIN 1 row per box
+ */
+function ensureDimRows(count, existingRows) {
+  const c = clampInt(count || 1, 1, 9999);
+  const base = Array.isArray(existingRows) ? existingRows : [];
+
+  return Array.from({ length: c }).map((_, i) => ({
+    qty: base[i]?.qty ?? 1,
+    weight: base[i]?.weight ?? "",
+    length: base[i]?.length ?? "",
+    breadth: base[i]?.breadth ?? "",
+    height: base[i]?.height ?? "",
+  }));
+}
+
+function ensureGoodsRows(count, existingRows) {
+  const c = clampInt(count || 1, 1, 9999);
+  const base = Array.isArray(existingRows) ? existingRows : [];
+
+  // keep only valid box rows
+  let filtered = base.filter((r) => Number(r?.boxNo || 1) <= c);
+
+  // ensure min 1 row per box
+  const grouped = {};
+  filtered.forEach((r) => {
+    const b = Number(r?.boxNo || 1);
+    grouped[b] = (grouped[b] || 0) + 1;
+  });
+
+  for (let b = 1; b <= c; b++) {
+    if (!grouped[b]) filtered.push(makeGoodsRow(b));
+  }
+
+  filtered.sort((a, b) => Number(a.boxNo || 1) - Number(b.boxNo || 1));
+  return filtered;
+}
+
+/* ✅ dropdowns */
+const EXPORT_FORMATS = [
+  { value: "B2B", label: "B2B" },
+  { value: "B2C", label: "B2C" },
+];
+const TERMS_OPTIONS = ["DDU", "DDP", "CIF", "C&F", "DAP"];
+const EXPORT_REASONS = [
+  { value: "COMMERCIAL", label: "COMMERCIAL" },
+  { value: "SAMPLE", label: "SAMPLE" },
+  { value: "GIFT", label: "GIFT" },
+  { value: "RETURN", label: "RETURN" },
+  { value: "OTHER", label: "OTHER" },
+];
+
 export default function BookShipmentExportStep2({
   data,
   onChange,
   onNext,
   onBack,
 }) {
+  const shipment = data?.shipment || {};
   const extra = data?.extra || {};
 
-  /** ✅ payload */
+  /** ✅ from Step1 */
+  const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
+  const nonDocCategory = shipment.nonDocCategory || "COURIER_SAMPLE";
+  const isDocument = shipmentMainType === "DOCUMENT";
+
+  /** ✅ rates from parent */
+  const rates = Array.isArray(data?.rates) ? data.rates : [];
+  const selectedRate = data?.selectedRate || null;
+
+  /** ✅ payload slices */
   const units = extra.units || {};
   const exportDetails = extra.exportDetails || {};
   const boxes = extra.boxes || {};
@@ -141,184 +120,335 @@ export default function BookShipmentExportStep2({
   const currencyUnit = units.currencyUnit || "INR";
   const dimensionUnit = units.dimensionUnit || "CM";
 
-  /** ✅ shipment type + optional ref */
-  const shipmentType = exportDetails.shipmentType || "CSB-IV";
-  const isDocument = shipmentType === "DOCUMENT";
+  /** ✅ shared fields */
   const referenceNumber = exportDetails.referenceNumber || "";
+  const exportFormat = exportDetails.exportFormat || "B2B";
 
-  /** ✅ document weight */
+  /** ✅ doc fields */
   const docWeight = exportDetails.docWeight ?? "";
+  const generalGoodsDescription = exportDetails.generalGoodsDescription || "";
 
-  /** ✅ boxes */
-  const boxesCount = boxes.boxesCount ?? "";
-  const boxRows = boxes.rows ?? [];
-
-  /** ✅ goods rows */
-  const goodsRows = Array.isArray(goods.rows) ? goods.rows : [];
-
-  /** ✅ invoice/export */
+  /** ✅ NON DOC fields */
   const termsOfInvoice = exportDetails.termsOfInvoice || "";
   const invoiceNumber = exportDetails.invoiceNumber || "";
   const invoiceDate = exportDetails.invoiceDate || "";
   const gstInvoice = exportDetails.gstInvoice ?? false;
   const exportReason = exportDetails.exportReason || "";
-  const exportFormat = exportDetails.exportFormat || "B2B";
+
+  // ✅ category logic
+  const isCommercialOrCSBV =
+    String(nonDocCategory || "").toUpperCase() === "COMMERCIAL" ||
+    String(nonDocCategory || "").toUpperCase() === "CSBV";
+
+  // ✅ extra fields (Commercial / CSBV only)
+  const iecNumber = exportDetails.iecNumber || "";
+  const lutIgst = exportDetails.lutIgst || ""; // "LUT" | "IGST"
+  const lutNumber = exportDetails.lutNumber || "";
+  const lutIssueDate = exportDetails.lutIssueDate || "";
+  const totalIgst = exportDetails.totalIgst || "";
+  const bankAccNumber = exportDetails.bankAccNumber || "";
+  const bankIFSC = exportDetails.bankIFSC || "";
+  const bankADCode = exportDetails.bankADCode || "";
+  const firmType = exportDetails.firmType || "";
+  const nfei = exportDetails.nfei ?? false;
+
+  // extra charges (as per image)
+  const fobValue = exportDetails.fobValue || "";
+  const freightCharges = exportDetails.freightCharges || "";
+  const insurance = exportDetails.insurance || "";
+  const otherCharges = exportDetails.otherCharges || "";
+  const otherChargeName = exportDetails.otherChargeName || "";
+
+  /** ✅ boxes meta */
+  const boxesCountRaw = boxes.boxesCount ?? "";
+  const boxesCount = clampInt(boxesCountRaw || 1, 1, 9999);
+
+  /** ✅ modal tables */
+  const boxRows = Array.isArray(boxes.rows) ? boxes.rows : [];
+  const goodsRows = Array.isArray(goods.rows) ? goods.rows : [];
 
   /** UI */
   const [missingFields, setMissingFields] = useState({});
   const [formError, setFormError] = useState("");
 
-  /** patch helpers */
-  const patchExtra = (patch) => {
-    onChange?.({
-      extra: {
-        ...extra,
-        ...patch,
-      },
-    });
-  };
+  /** ✅ rates states */
+  const [showRates, setShowRates] = useState(false);
+  const [selectedId, setSelectedId] = useState(selectedRate?.id || "");
+  const [expandedId, setExpandedId] = useState("");
 
-  const patchUnits = (patch) => patchExtra({ units: { ...units, ...patch } });
+  /** ✅ modals */
+  const [openDimsModal, setOpenDimsModal] = useState(false);
+  const [openGoodsModal, setOpenGoodsModal] = useState(false);
+
+  const [dimInvalid, setDimInvalid] = useState({}); // { [idx]: { weight:true, length:true, breadth:true, height:true } }
+  const [goodsInvalid, setGoodsInvalid] = useState({}); // { [idx]: { description:true, hsnCode:true, qty:true, rate:true } }
+
+  /** patch helpers */
+  const patchExtra = (patch) => onChange?.({ extra: { ...extra, ...patch } });
   const patchExportDetails = (patch) =>
     patchExtra({ exportDetails: { ...exportDetails, ...patch } });
   const patchBoxes = (patch) => patchExtra({ boxes: { ...boxes, ...patch } });
   const patchGoods = (patch) => patchExtra({ goods: { ...goods, ...patch } });
 
-  /** ✅ document mode cleanup */
+  // ✅ Lock page scroll when any modal is open
+  useEffect(() => {
+    const isOpen = openDimsModal || openGoodsModal;
+    if (!isOpen) return;
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = prev || "";
+    };
+  }, [openDimsModal, openGoodsModal]);
+
+  /** ✅ Ensure non-doc starts with 1 box by default */
+  useEffect(() => {
+    if (isDocument) return;
+    if (!boxes.boxesCount || Number(boxes.boxesCount) < 1) {
+      patchBoxes({ boxesCount: "1" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDocument]);
+
+  /** ✅ cleanup when flow changes */
   useEffect(() => {
     setMissingFields({});
     setFormError("");
+    setShowRates(false);
+    setExpandedId("");
+    setSelectedId(selectedRate?.id || "");
 
     if (isDocument) {
-      // clear non-doc fields
       patchBoxes({ boxesCount: "", rows: [], totalWeight: 0 });
       patchGoods({ rows: [] });
-      patchExportDetails({
-        termsOfInvoice: "",
-        invoiceNumber: "",
-        invoiceDate: "",
-        gstInvoice: false,
-        exportReason: "",
-        exportFormat: "B2B",
-      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shipmentType]);
+  }, [isDocument, nonDocCategory]);
 
-  /** ✅ total weight */
+  /**
+   * ✅ SIMPLE + RELIABLE SYNC
+   * - ALWAYS ensure dims has exactly boxesCount rows
+   * - ALWAYS ensure goods has min 1 row per box
+   */
+  useEffect(() => {
+    if (isDocument) return;
+
+    const nextDims = ensureDimRows(boxesCount, boxRows);
+    if (nextDims.length !== boxRows.length) patchBoxes({ rows: nextDims });
+
+    const nextGoods = ensureGoodsRows(boxesCount, goodsRows);
+    if (nextGoods.length !== goodsRows.length) patchGoods({ rows: nextGoods });
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boxesCount, isDocument]);
+
+  /** ✅ auto compute goods amount (non-doc only) */
+  useEffect(() => {
+    if (isDocument) return;
+
+    const next = goodsRows.map((r) => {
+      const qty = safeNum(r.qty);
+      const rate = safeNum(r.rate);
+      const amount = Number((qty * rate).toFixed(2));
+      return { ...r, amount };
+    });
+
+    const changed = next.some(
+      (r, i) => Number(r.amount || 0) !== Number(goodsRows[i]?.amount || 0),
+    );
+
+    if (changed) patchGoods({ rows: next });
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goodsRows, isDocument]);
+
+  /** ✅ selected rate */
+  const pickedRate = useMemo(() => {
+    return rates.find((r) => r.id === selectedId) || null;
+  }, [rates, selectedId]);
+
+  const patchSelection = (rate) => onChange?.({ selectedRate: rate });
+
+  const handleCardClick = (rate) => {
+    setSelectedId(rate.id);
+    patchSelection(rate);
+    setFormError("");
+  };
+
+  const handleToggleBreakup = (rateId) => {
+    setExpandedId((prev) => (prev === rateId ? "" : rateId));
+  };
+
+  /** ✅ derived: total weight */
   const totalWeightBoxes = useMemo(() => {
     return boxRows.reduce((sum, r) => {
-      const qty = Number(r.qty || 0);
-      const wt = Number(r.weight || 0);
-      if (Number.isNaN(qty) || Number.isNaN(wt)) return sum;
+      const qty = safeNum(r.qty);
+      const wt = safeNum(r.weight);
       return sum + qty * wt;
     }, 0);
   }, [boxRows]);
 
-  /** ✅ normalize box rows */
-  useEffect(() => {
-    if (isDocument) return;
-
-    const count = clampInt(boxesCount || 0, 0, 9999);
-
-    if (!count || count < 1) {
-      if (boxRows.length) patchBoxes({ rows: [], totalWeight: 0 });
-      return;
-    }
-
-    const normalized = normalizeRowsToBoxes(boxRows, count);
-
-    const same =
-      normalized.length === boxRows.length &&
-      normalized.every(
-        (r, i) => JSON.stringify(r) === JSON.stringify(boxRows[i]),
-      );
-
-    if (!same) patchBoxes({ rows: normalized });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boxesCount, boxRows, isDocument]);
-
-  /** ✅ save total weight */
+  /** ✅ update totalWeight in payload */
   useEffect(() => {
     if (isDocument) return;
     patchBoxes({ totalWeight: Number(totalWeightBoxes.toFixed(2)) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalWeightBoxes, isDocument]);
 
-  /** ✅ Ensure at least 1 content per box (auto-create) */
-  useEffect(() => {
-    if (isDocument) return;
+  /** ===========================
+   * ✅ Validation
+   * =========================== */
+  const validateDocumentDetails = () => {
+    const missing = {};
+    if (!exportFormat) missing.exportFormat = true;
 
-    const count = clampInt(boxesCount || 0, 0, 9999);
-    if (count < 1) {
-      if (goodsRows.length) patchGoods({ rows: [] });
-      return;
+    const w = Number(docWeight);
+    if (!docWeight || Number.isNaN(w) || w <= 0) missing.docWeight = true;
+    if (!generalGoodsDescription) missing.generalGoodsDescription = true;
+
+    setMissingFields(missing);
+    if (Object.keys(missing).length) {
+      setFormError("Please fill the highlighted fields");
+      return false;
     }
-
-    const grouped = {};
-    goodsRows.forEach((r) => {
-      const b = Number(r.boxNo || 1);
-      grouped[b] = grouped[b] || [];
-      grouped[b].push(r);
-    });
-
-    const next = [];
-    for (let boxNo = 1; boxNo <= count; boxNo++) {
-      const rowsForBox = grouped[boxNo] || [];
-      if (rowsForBox.length === 0) next.push(makeGoodsRow(boxNo));
-      else next.push(...rowsForBox);
-    }
-
-    const same = JSON.stringify(next) === JSON.stringify(goodsRows);
-    if (!same) patchGoods({ rows: next });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boxesCount, isDocument]);
-
-  /** ✅ auto compute amount */
-  useEffect(() => {
-    const next = goodsRows.map((r) => {
-      const qty = safeNum(r.qty);
-      const rate = safeNum(r.rate);
-      return { ...r, amount: Number((qty * rate).toFixed(2)) };
-    });
-
-    const same = JSON.stringify(next) === JSON.stringify(goodsRows);
-    if (!same) patchGoods({ rows: next });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goodsRows]);
-
-  /** handlers */
-  const handleQtyChange = (rowIndex, nextQtyRaw) => {
-    const count = clampInt(boxesCount || 0, 0, 9999);
-    if (count < 1) return;
-
-    let rows = normalizeRowsToBoxes(boxRows, count);
-    if (!rows[rowIndex]) return;
-
-    rows[rowIndex].qty = clampInt(nextQtyRaw, 1, 999999);
-    rows = normalizeRowsToBoxes(rows, count);
-
-    patchBoxes({ rows });
+    setFormError("");
+    return true;
   };
 
-  const handleRowFieldChange = (rowIndex, key, value) => {
-    const copy = [...boxRows];
-    if (!copy[rowIndex]) return;
-    copy[rowIndex] = { ...copy[rowIndex], [key]: value };
-    patchBoxes({ rows: copy });
+  const validateDimsRows = () => {
+    const bad = {};
+    boxRows.forEach((r, idx) => {
+      const rowBad = {};
+      if (safeNum(r.weight) <= 0) rowBad.weight = true;
+      if (safeNum(r.length) <= 0) rowBad.length = true;
+      if (safeNum(r.breadth) <= 0) rowBad.breadth = true;
+      if (safeNum(r.height) <= 0) rowBad.height = true;
+
+      if (Object.keys(rowBad).length) bad[idx] = rowBad;
+    });
+    setDimInvalid(bad);
+    return Object.keys(bad).length === 0;
+  };
+
+  const validateGoodsRows = () => {
+    const bad = {};
+    goodsRows.forEach((r, idx) => {
+      const rowBad = {};
+      if (!String(r.description || "").trim()) rowBad.description = true;
+      if (!String(r.hsnCode || "").trim()) rowBad.hsnCode = true;
+      if (safeNum(r.qty) <= 0) rowBad.qty = true;
+      if (safeNum(r.rate) < 0) rowBad.rate = true;
+
+      if (Object.keys(rowBad).length) bad[idx] = rowBad;
+    });
+    setGoodsInvalid(bad);
+    return Object.keys(bad).length === 0;
+  };
+
+  const validateNonDocDetails = () => {
+    const missing = {};
+    if (!exportFormat) missing.exportFormat = true;
+    if (!termsOfInvoice) missing.termsOfInvoice = true;
+    if (!exportReason) missing.exportReason = true;
+    if (!invoiceNumber) missing.invoiceNumber = true;
+    if (!invoiceDate) missing.invoiceDate = true;
+    if (boxesCount < 1) missing.boxesCount = true;
+    if (!generalGoodsDescription) missing.generalGoodsDescription = true;
+    if (isCommercialOrCSBV) {
+      if (!iecNumber) missing.iecNumber = true;
+      if (!lutIgst) missing.lutIgst = true;
+
+      if (lutIgst === "LUT") {
+        if (!lutNumber) missing.lutNumber = true;
+        if (!lutIssueDate) missing.lutIssueDate = true;
+      }
+
+      if (lutIgst === "IGST") {
+        if (!totalIgst) missing.totalIgst = true;
+      }
+
+      if (!bankAccNumber) missing.bankAccNumber = true;
+      if (!bankIFSC) missing.bankIFSC = true;
+      if (!bankADCode) missing.bankADCode = true;
+      if (!firmType) missing.firmType = true;
+
+      // charges required
+      if (!fobValue) missing.fobValue = true;
+      if (!freightCharges) missing.freightCharges = true;
+      if (!insurance) missing.insurance = true;
+      if (!otherCharges) missing.otherCharges = true;
+      if (!otherChargeName) missing.otherChargeName = true;
+    }
+
+    setMissingFields(missing);
+    if (Object.keys(missing).length) {
+      setFormError("Please fill the highlighted fields");
+      return false;
+    }
+
+    // ✅ also validate modal required rows
+    const okDims = validateDimsRows();
+    const okGoods = validateGoodsRows();
+
+    if (!okDims || !okGoods) {
+      setFormError("Please fill all required fields inside the modals");
+      return false;
+    }
+
+    setFormError("");
+    return true;
+  };
+
+  /** ===========================
+   * ✅ Actions
+   * =========================== */
+  const handleCheckRates = () => {
+    const ok = isDocument ? validateDocumentDetails() : validateNonDocDetails();
+    if (!ok) return;
+
+    setShowRates(true);
+    onNext?.({ action: "CHECK_RATES" });
+  };
+
+  const handleNext = () => {
+    if (!pickedRate) {
+      setFormError("Please select a vendor to continue");
+      return;
+    }
+    patchSelection(pickedRate);
+    setFormError("");
+    onNext?.({ action: "NEXT" });
+  };
+
+  /** ===========================
+   * ✅ MODAL: Weight & Dimensions
+   * =========================== */
+  const updateDimRow = (idx, patch) => {
+    const next = [...boxRows];
+    if (!next[idx]) return;
+    next[idx] = { ...next[idx], ...patch };
+    patchBoxes({ rows: next });
+  };
+
+  /** ===========================
+   * ✅ MODAL: Shipment Content
+   * =========================== */
+  const addGoodsRowBelow = (idx) => {
+    const row = goodsRows[idx];
+    const boxNo = Number(row?.boxNo || 1);
+
+    const next = [...goodsRows];
+    next.splice(idx + 1, 0, makeGoodsRow(boxNo)); // ✅ insert below clicked row
+
+    patchGoods({ rows: next });
   };
 
   const updateGoodsRow = (idx, patch) => {
     const next = [...goodsRows];
+    if (!next[idx]) return;
     next[idx] = { ...next[idx], ...patch };
-    patchGoods({ rows: next });
-  };
-
-  const addContentForBox = (boxNo) => {
-    const next = [...goodsRows, makeGoodsRow(boxNo)];
     patchGoods({ rows: next });
   };
 
@@ -327,387 +457,39 @@ export default function BookShipmentExportStep2({
     const boxNo = Number(row?.boxNo || 1);
 
     const remaining = goodsRows.filter((_, i) => i !== idx);
-
-    // ensure at least 1 row per box
     const stillHas = remaining.some((r) => Number(r.boxNo || 1) === boxNo);
-    const count = clampInt(boxesCount || 0, 0, 9999);
 
-    const finalRows = [...remaining];
-    if (!stillHas && boxNo >= 1 && boxNo <= count) {
-      finalRows.push(makeGoodsRow(boxNo));
-    }
+    // cannot delete last row of a box
+    if (!stillHas) return;
 
-    patchGoods({ rows: finalRows });
+    patchGoods({ rows: remaining });
   };
-
-  /** ✅ validation */
-  const validateStep2 = () => {
-    const missing = {};
-
-    // Units always required
-    if (!weightUnit) missing.weightUnit = true;
-
-    // Document flow
-    if (isDocument) {
-      const w = Number(docWeight);
-      if (!docWeight || Number.isNaN(w) || w <= 0) missing.docWeight = true;
-
-      setMissingFields(missing);
-      if (Object.keys(missing).length) {
-        setFormError("All fields are required");
-        return false;
-      }
-      setFormError("");
-      return true;
-    }
-
-    // non-document units
-    if (!currencyUnit) missing.currencyUnit = true;
-    if (!dimensionUnit) missing.dimensionUnit = true;
-
-    // shipment type
-    if (!shipmentType) missing.shipmentType = true;
-
-    // boxes
-    const count = clampInt(boxesCount || 0, 0, 9999);
-    if (!boxesCount || Number.isNaN(count) || count <= 0)
-      missing.boxesCount = true;
-
-    if (count > 0) {
-      if (!totalWeightBoxes || totalWeightBoxes <= 0)
-        missing.totalWeightBoxes = true;
-
-      boxRows.forEach((r, idx) => {
-        if (!r.weight || Number(r.weight) <= 0)
-          missing[`row_${idx}_weight`] = true;
-        if (!r.length || Number(r.length) <= 0)
-          missing[`row_${idx}_length`] = true;
-        if (!r.breadth || Number(r.breadth) <= 0)
-          missing[`row_${idx}_breadth`] = true;
-        if (!r.height || Number(r.height) <= 0)
-          missing[`row_${idx}_height`] = true;
-      });
-    }
-
-    // goods
-    goodsRows.forEach((r, idx) => {
-      if (!r.description) missing[`goods_${idx}_description`] = true;
-      if (!r.hsnCode) missing[`goods_${idx}_hsnCode`] = true;
-      if (!r.qty || safeNum(r.qty) <= 0) missing[`goods_${idx}_qty`] = true;
-      if (!r.rate || safeNum(r.rate) <= 0) missing[`goods_${idx}_rate`] = true;
-      if (!r.unit) missing[`goods_${idx}_unit`] = true;
-    });
-
-    // invoice/export
-    if (!termsOfInvoice) missing.termsOfInvoice = true;
-    if (!invoiceNumber) missing.invoiceNumber = true;
-    if (!invoiceDate) missing.invoiceDate = true;
-    if (!exportReason) missing.exportReason = true;
-    if (!exportFormat) missing.exportFormat = true;
-
-    setMissingFields(missing);
-
-    if (Object.keys(missing).length > 0) {
-      setFormError("All fields are required");
-      return false;
-    }
-
-    setFormError("");
-    return true;
-  };
-
-  const handleNext = () => {
-    const ok = validateStep2();
-    if (!ok) return;
-    onNext?.();
-  };
-
-  /** group goods by box */
-  const goodsByBox = useMemo(() => {
-    const map = {};
-    goodsRows.forEach((r, idx) => {
-      const b = Number(r.boxNo || 1);
-      map[b] = map[b] || [];
-      map[b].push({ row: r, index: idx });
-    });
-    return map;
-  }, [goodsRows]);
-
-  const countBoxes = clampInt(boxesCount || 0, 0, 9999);
 
   return (
     <>
-      {/* ✅ Title */}
       <div className="mb-4">
         <h3 className="text-base font-extrabold text-black tracking-wide">
           Export Shipment Details
         </h3>
       </div>
 
-      {/* ✅ Weight Unit ALWAYS */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field
-          label="WEIGHT UNIT"
-          required
-          invalid={missingFields.weightUnit}
-          icon={<Scale className="h-4 w-4 text-[#6b7280]" />}
-        >
-          <select
-            value={weightUnit}
-            onChange={(e) => patchUnits({ weightUnit: e.target.value })}
-            className="h-11 w-full bg-transparent px-4 text-sm font-bold text-[#111827] outline-none"
-          >
-            <option value="KG">KG</option>
-            <option value="GM">GM</option>
-          </select>
-        </Field>
-
-        {/* ✅ Document: show weight only */}
-        {isDocument ? (
-          <Field
-            label={`WEIGHT (${weightUnit})`}
-            required
-            invalid={missingFields.docWeight}
-            icon={<Scale className="h-4 w-4 text-[#6b7280]" />}
-          >
-            <input
-              type="text"
-              inputMode="decimal"
-              value={docWeight}
-              onChange={(e) =>
-                patchExportDetails({
-                  docWeight: e.target.value.replace(/[^\d.]/g, ""),
-                })
-              }
-              placeholder="Enter document weight"
-              className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-            />
-          </Field>
-        ) : (
-          <>
-            <Field
-              label="CURRENCY"
-              required
-              invalid={missingFields.currencyUnit}
-              icon={<IndianRupee className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <select
-                value={currencyUnit}
-                onChange={(e) => patchUnits({ currencyUnit: e.target.value })}
-                className="h-11 w-full bg-transparent px-4 text-sm font-bold text-[#111827] outline-none"
-              >
-                <option value="INR">INR</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
-            </Field>
-
-            <Field
-              label="DIMENSION UNIT"
-              required
-              invalid={missingFields.dimensionUnit}
-              icon={<Ruler className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <select
-                value={dimensionUnit}
-                onChange={(e) => patchUnits({ dimensionUnit: e.target.value })}
-                className="h-11 w-full bg-transparent px-4 text-sm font-bold text-[#111827] outline-none"
-              >
-                <option value="CM">CM</option>
-                <option value="INCH">INCH</option>
-              </select>
-            </Field>
-          </>
-        )}
-      </div>
-
-      {/* ✅ Shipment type + optional ref */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field
-          label="SHIPMENT TYPE"
-          required
-          invalid={missingFields.shipmentType}
-          icon={<PackageCheck className="h-4 w-4 text-[#6b7280]" />}
-        >
-          <div className="relative w-full">
-            <select
-              value={shipmentType}
-              onChange={(e) =>
-                patchExportDetails({ shipmentType: e.target.value })
-              }
-              className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
-            >
-              {SHIPMENT_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-          </div>
-        </Field>
-
-        {/* ✅ reference NOT required */}
-        <Field
-          label="REFERENCE NO / ORDER ID (OPTIONAL)"
-          required={false}
-          invalid={false}
-          icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
-        >
-          <input
-            type="text"
-            value={referenceNumber}
-            onChange={(e) =>
-              patchExportDetails({ referenceNumber: e.target.value })
-            }
-            placeholder="Enter reference no"
-            className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-          />
-        </Field>
-      </div>
-
-      {/* ✅ if DOCUMENT stop here */}
+      {/* ✅ Document Flow */}
       {isDocument ? (
         <>
-          <div className="mt-6 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="rounded-md border border-gray-200 bg-gray-50 px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-100 transition active:scale-[0.99]"
-            >
-              Back
-            </button>
-
-            <button
-              type="button"
-              onClick={handleNext}
-              className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md transition hover:bg-gray-900 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-black/20"
-            >
-              Next
-            </button>
-          </div>
-
-          {formError ? (
-            <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-extrabold tracking-wider text-red-700">
-              {formError}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-
-      {/* ✅ NON DOCUMENT FIELDS */}
-      {!isDocument ? (
-        <>
-          {/* ✅ Invoice / Export fields */}
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field
-              label="TERMS OF INVOICE"
-              required
-              invalid={missingFields.termsOfInvoice}
-              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <div className="relative w-full">
-                <select
-                  value={termsOfInvoice}
-                  onChange={(e) =>
-                    patchExportDetails({ termsOfInvoice: e.target.value })
-                  }
-                  className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
-                >
-                  <option value="" disabled>
-                    Select Terms
-                  </option>
-                  {TERMS_OPTIONS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-              </div>
-            </Field>
-
-            <Field
-              label="EXPORT REASON"
-              required
-              invalid={missingFields.exportReason}
+              label="REFERENCE NO. (OPTIONAL)"
+              required={false}
+              invalid={false}
               icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
             >
               <input
-                type="text"
-                value={exportReason}
+                value={referenceNumber}
                 onChange={(e) =>
-                  patchExportDetails({ exportReason: e.target.value })
-                }
-                placeholder="E.g. Commercial sale"
-                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-              />
-            </Field>
-
-            <Field
-              label="INVOICE NUMBER"
-              required
-              invalid={missingFields.invoiceNumber}
-              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <input
-                type="text"
-                value={invoiceNumber}
-                onChange={(e) =>
-                  patchExportDetails({ invoiceNumber: e.target.value })
-                }
-                placeholder="Enter invoice number"
-                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
-              />
-            </Field>
-
-            <Field
-              label="INVOICE DATE"
-              required
-              invalid={missingFields.invoiceDate}
-              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <input
-                type="date"
-                value={invoiceDate}
-                onChange={(e) =>
-                  patchExportDetails({ invoiceDate: e.target.value })
+                  patchExportDetails({ referenceNumber: e.target.value })
                 }
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
               />
-            </Field>
-
-            <Field
-              label="GST INVOICE?"
-              required={false}
-              invalid={false}
-              icon={<PackageCheck className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <div className="flex h-11 w-full items-center gap-6 px-4">
-                <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-[#111827]">
-                  <input
-                    type="radio"
-                    name="gstInvoice"
-                    value="no"
-                    checked={!gstInvoice}
-                    onChange={() => patchExportDetails({ gstInvoice: false })}
-                    className="h-4 w-4 accent-black"
-                  />
-                  No
-                </label>
-
-                <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-[#111827]">
-                  <input
-                    type="radio"
-                    name="gstInvoice"
-                    value="yes"
-                    checked={!!gstInvoice}
-                    onChange={() => patchExportDetails({ gstInvoice: true })}
-                    className="h-4 w-4 accent-black"
-                  />
-                  Yes
-                </label>
-              </div>
             </Field>
 
             <Field
@@ -733,11 +515,539 @@ export default function BookShipmentExportStep2({
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               </div>
             </Field>
+
+            <Field
+              label={`WEIGHT (${weightUnit})`}
+              required
+              invalid={missingFields.docWeight}
+              icon={<Scale className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                value={docWeight}
+                onChange={(e) =>
+                  patchExportDetails({
+                    docWeight: e.target.value.replace(/[^\d.]/g, ""),
+                  })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                placeholder="Weight"
+              />
+            </Field>
           </div>
-          {/* Boxes + Dimensions */}
+
+          <div className="mt-4">
+            <Field
+              label="GENERAL DESCRIPTION OF GOODS"
+              required
+              invalid={missingFields.generalGoodsDescription}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                value={generalGoodsDescription}
+                onChange={(e) =>
+                  patchExportDetails({
+                    generalGoodsDescription: e.target.value,
+                  })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+              />
+            </Field>
+          </div>
+
+          {!showRates ? (
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                className="rounded-md border border-gray-200 bg-gray-50 px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-100"
+              >
+                Back
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCheckRates}
+                className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900"
+              >
+                Check Rates
+              </button>
+            </div>
+          ) : null}
+
+          {showRates ? (
+            <RatesUI
+              rates={rates}
+              selectedId={selectedId}
+              expandedId={expandedId}
+              onCardClick={handleCardClick}
+              onToggleBreakup={handleToggleBreakup}
+              onBack={onBack}
+              onNext={handleNext}
+              setShowRates={setShowRates}
+            />
+          ) : null}
+
+          {formError ? <ErrorText text={formError} /> : null}
+        </>
+      ) : (
+        <>
+          {/* ✅ Non Document */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field
+              label="REFERENCE NO. (OPTIONAL)"
+              required={false}
+              invalid={false}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                value={referenceNumber}
+                onChange={(e) =>
+                  patchExportDetails({ referenceNumber: e.target.value })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+              />
+            </Field>
+
+            <Field
+              label="EXPORT FORMAT"
+              required
+              invalid={missingFields.exportFormat}
+              icon={<Boxes className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <div className="relative w-full">
+                <select
+                  value={exportFormat}
+                  onChange={(e) =>
+                    patchExportDetails({ exportFormat: e.target.value })
+                  }
+                  className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
+                >
+                  {EXPORT_FORMATS.map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              </div>
+            </Field>
+
+            <Field
+              label="TERMS OF INVOICE"
+              required
+              invalid={missingFields.termsOfInvoice}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <div className="relative w-full">
+                <select
+                  value={termsOfInvoice}
+                  onChange={(e) =>
+                    patchExportDetails({ termsOfInvoice: e.target.value })
+                  }
+                  className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
+                >
+                  <option value="" disabled>
+                    Select
+                  </option>
+                  {TERMS_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              </div>
+            </Field>
+          </div>
+
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field
-              label="NUMBER OF BOXES"
+              label="EXPORT REASON"
+              required
+              invalid={missingFields.exportReason}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <div className="relative w-full">
+                <select
+                  value={exportReason}
+                  onChange={(e) =>
+                    patchExportDetails({ exportReason: e.target.value })
+                  }
+                  className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
+                >
+                  <option value="" disabled>
+                    Select
+                  </option>
+                  {EXPORT_REASONS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              </div>
+            </Field>
+
+            <Field
+              label="INVOICE NO."
+              required
+              invalid={missingFields.invoiceNumber}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                value={invoiceNumber}
+                onChange={(e) =>
+                  patchExportDetails({ invoiceNumber: e.target.value })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+              />
+            </Field>
+
+            <Field
+              label="INVOICE DATE"
+              required
+              invalid={missingFields.invoiceDate}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                type="date"
+                value={invoiceDate}
+                onChange={(e) =>
+                  patchExportDetails({ invoiceDate: e.target.value })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+              />
+            </Field>
+          </div>
+
+          {/* ✅ EXTRA FIELDS for COMMERCIAL / CSBV */}
+          {isCommercialOrCSBV ? (
+            <>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {/* ✅ GST Invoice */}
+                <Field
+                  label="GST INVOICE?"
+                  required
+                  invalid={missingFields.gstInvoice}
+                  icon={<PackageCheck className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <div className="flex h-11 w-full items-center gap-6 px-4">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-[#111827]">
+                      <input
+                        type="radio"
+                        checked={!gstInvoice}
+                        onChange={() =>
+                          patchExportDetails({ gstInvoice: false })
+                        }
+                        className="h-4 w-4 accent-black"
+                      />
+                      No
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-[#111827]">
+                      <input
+                        type="radio"
+                        checked={!!gstInvoice}
+                        onChange={() =>
+                          patchExportDetails({ gstInvoice: true })
+                        }
+                        className="h-4 w-4 accent-black"
+                      />
+                      Yes
+                    </label>
+                  </div>
+                </Field>
+
+                {/* ✅ IEC Number */}
+                <Field
+                  label="IEC NUMBER"
+                  required
+                  invalid={missingFields.iecNumber}
+                  icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <input
+                    value={iecNumber}
+                    onChange={(e) =>
+                      patchExportDetails({
+                        iecNumber: e.target.value.replace(/[^\d]/g, ""),
+                      })
+                    }
+                    className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    placeholder="IEC Number"
+                  />
+                </Field>
+
+                {/* ✅ LUT / IGST */}
+                <Field
+                  label="LUT / IGST"
+                  required
+                  invalid={missingFields.lutIgst}
+                  icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <div className="relative w-full">
+                    <select
+                      value={lutIgst}
+                      onChange={(e) =>
+                        patchExportDetails({ lutIgst: e.target.value })
+                      }
+                      className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
+                    >
+                      <option value="" disabled>
+                        Select
+                      </option>
+                      <option value="LUT">LUT</option>
+                      <option value="IGST">IGST</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                  </div>
+                </Field>
+              </div>
+
+              {/* LUT dependent */}
+              {lutIgst === "LUT" ? (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Field
+                    label="LUT NUMBER"
+                    required
+                    invalid={missingFields.lutNumber}
+                    icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={lutNumber}
+                      onChange={(e) =>
+                        patchExportDetails({ lutNumber: e.target.value })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+
+                  <Field
+                    label="LUT ISSUE DATE"
+                    required
+                    invalid={missingFields.lutIssueDate}
+                    icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      type="date"
+                      value={lutIssueDate}
+                      onChange={(e) =>
+                        patchExportDetails({ lutIssueDate: e.target.value })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+
+                  {/* NFEI checkbox */}
+                  <Field
+                    label="NFEI"
+                    required={false}
+                    invalid={false}
+                    icon={<PackageCheck className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <div className="flex h-11 w-full items-center px-4">
+                      <label className="flex items-center gap-3 text-sm font-bold text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={!!nfei}
+                          onChange={(e) =>
+                            patchExportDetails({ nfei: e.target.checked })
+                          }
+                          className="h-4 w-4 accent-black"
+                        />
+                        NFEI
+                      </label>
+                    </div>
+                  </Field>
+                </div>
+              ) : null}
+
+              {/* IGST dependent */}
+              {lutIgst === "IGST" ? (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Field
+                    label="TOTAL IGST"
+                    required
+                    invalid={missingFields.totalIgst}
+                    icon={<IndianRupee className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={totalIgst}
+                      onChange={(e) =>
+                        patchExportDetails({
+                          totalIgst: e.target.value.replace(/[^\d.]/g, ""),
+                        })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+                </div>
+              ) : null}
+
+              {/* ✅ Bank details */}
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field
+                  label="BANK A/C NUMBER"
+                  required
+                  invalid={missingFields.bankAccNumber}
+                  icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <input
+                    value={bankAccNumber}
+                    onChange={(e) =>
+                      patchExportDetails({ bankAccNumber: e.target.value })
+                    }
+                    className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                  />
+                </Field>
+
+                <Field
+                  label="BANK IFSC"
+                  required
+                  invalid={missingFields.bankIFSC}
+                  icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <input
+                    value={bankIFSC}
+                    onChange={(e) =>
+                      patchExportDetails({
+                        bankIFSC: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                  />
+                </Field>
+
+                <Field
+                  label="BANK AD CODE"
+                  required
+                  invalid={missingFields.bankADCode}
+                  icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <input
+                    value={bankADCode}
+                    onChange={(e) =>
+                      patchExportDetails({ bankADCode: e.target.value })
+                    }
+                    className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                  />
+                </Field>
+              </div>
+
+              {/* ✅ Firm Type */}
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field
+                  label="FIRM TYPE"
+                  required
+                  invalid={missingFields.firmType}
+                  icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                >
+                  <input
+                    value={firmType}
+                    onChange={(e) =>
+                      patchExportDetails({ firmType: e.target.value })
+                    }
+                    className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    placeholder="Proprietor / Pvt Ltd / LLP etc."
+                  />
+                </Field>
+              </div>
+
+              {/* ✅ Charges */}
+              <div className="mt-5 rounded-md border border-black/10 bg-white p-4">
+                <div className="text-sm font-extrabold text-black mb-3">
+                  Charges
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field
+                    label="FOB VALUE"
+                    required
+                    invalid={missingFields.fobValue}
+                    icon={<IndianRupee className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={fobValue}
+                      onChange={(e) =>
+                        patchExportDetails({
+                          fobValue: e.target.value.replace(/[^\d.]/g, ""),
+                        })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+
+                  <Field
+                    label="FREIGHT CHARGES"
+                    required
+                    invalid={missingFields.freightCharges}
+                    icon={<IndianRupee className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={freightCharges}
+                      onChange={(e) =>
+                        patchExportDetails({
+                          freightCharges: e.target.value.replace(/[^\d.]/g, ""),
+                        })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+
+                  <Field
+                    label="INSURANCE"
+                    required
+                    invalid={missingFields.insurance}
+                    icon={<IndianRupee className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={insurance}
+                      onChange={(e) =>
+                        patchExportDetails({
+                          insurance: e.target.value.replace(/[^\d.]/g, ""),
+                        })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+
+                  <Field
+                    label="OTHER CHARGES"
+                    required
+                    invalid={missingFields.otherCharges}
+                    icon={<IndianRupee className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={otherCharges}
+                      onChange={(e) =>
+                        patchExportDetails({
+                          otherCharges: e.target.value.replace(/[^\d.]/g, ""),
+                        })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+
+                  <Field
+                    label="OTHER CHARGE NAME"
+                    required
+                    invalid={missingFields.otherChargeName}
+                    icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+                  >
+                    <input
+                      value={otherChargeName}
+                      onChange={(e) =>
+                        patchExportDetails({ otherChargeName: e.target.value })
+                      }
+                      className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+                    />
+                  </Field>
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field
+              label="NO. OF BOXES"
               required
               invalid={missingFields.boxesCount}
               icon={<Boxes className="h-4 w-4 text-[#6b7280]" />}
@@ -746,285 +1056,652 @@ export default function BookShipmentExportStep2({
                 type="number"
                 min={1}
                 value={boxesCount}
-                onChange={(e) => patchBoxes({ boxesCount: e.target.value })}
-                placeholder="Enter number of boxes"
-                className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+                onChange={(e) =>
+                  patchBoxes({
+                    boxesCount: String(clampInt(e.target.value, 1, 9999)),
+                  })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
               />
             </Field>
 
             <Field
-              label={`TOTAL WEIGHT (${weightUnit})`}
-              required
-              invalid={!!missingFields.totalWeightBoxes}
+              label={`TOTAL ACTUAL WEIGHT (${weightUnit})`}
+              required={false}
+              invalid={false}
               icon={<Scale className="h-4 w-4 text-[#6b7280]" />}
             >
               <input
                 readOnly
-                value={totalWeightBoxes.toFixed(2)}
-                className="h-11 w-full px-4 text-sm font-extrabold text-gray-900 outline-none bg-gray-50 cursor-not-allowed"
+                value={Number(totalWeightBoxes || 0).toFixed(2)}
+                className="h-11 w-full cursor-not-allowed bg-gray-50 px-4 text-sm font-extrabold text-gray-900 outline-none"
               />
             </Field>
 
-            <div />
+            <Field
+              label="GST INVOICE?"
+              required={false}
+              invalid={false}
+              icon={<PackageCheck className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <div className="flex h-11 w-full items-center gap-6 px-4">
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-[#111827]">
+                  <input
+                    type="radio"
+                    checked={!gstInvoice}
+                    onChange={() => patchExportDetails({ gstInvoice: false })}
+                    className="h-4 w-4 accent-black"
+                  />
+                  No
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-[#111827]">
+                  <input
+                    type="radio"
+                    checked={!!gstInvoice}
+                    onChange={() => patchExportDetails({ gstInvoice: true })}
+                    className="h-4 w-4 accent-black"
+                  />
+                  Yes
+                </label>
+              </div>
+            </Field>
           </div>
 
-          {clampInt(boxesCount || 0, 0, 9999) > 0 ? (
-            <div className="mt-3 space-y-3">
-              {boxRows.map((row, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-md border border-[#e5e7eb] bg-white p-3"
+          {/* ✅ modals buttons */}
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                // ✅ ensure rows exist BEFORE modal opens
+                patchBoxes({ rows: ensureDimRows(boxesCount, boxRows) });
+                setOpenDimsModal(true);
+              }}
+              className="rounded-md border border-black/10 bg-white px-6 py-4 text-sm font-extrabold text-gray-900 shadow-sm hover:bg-gray-50"
+            >
+              Add Weight & Dimensions
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                // ✅ ensure rows exist BEFORE modal opens
+                patchGoods({ rows: ensureGoodsRows(boxesCount, goodsRows) });
+                setOpenGoodsModal(true);
+              }}
+              className="rounded-md border border-black/10 bg-white px-6 py-4 text-sm font-extrabold text-gray-900 shadow-sm hover:bg-gray-50"
+            >
+              Add Shipment Contents
+            </button>
+          </div>
+
+          <div className="mt-5">
+            <Field
+              label="GENERAL DESCRIPTION OF GOODS"
+              required
+              invalid={missingFields.generalGoodsDescription}
+              icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+            >
+              <input
+                value={generalGoodsDescription}
+                onChange={(e) =>
+                  patchExportDetails({
+                    generalGoodsDescription: e.target.value,
+                  })
+                }
+                className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
+              />
+            </Field>
+          </div>
+
+          {!showRates ? (
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                className="rounded-md border border-gray-200 bg-gray-50 px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-100"
+              >
+                Back
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCheckRates}
+                className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900"
+              >
+                Check Rates
+              </button>
+            </div>
+          ) : null}
+
+          {showRates ? (
+            <RatesUI
+              rates={rates}
+              selectedId={selectedId}
+              expandedId={expandedId}
+              onCardClick={handleCardClick}
+              onToggleBreakup={handleToggleBreakup}
+              onBack={onBack}
+              onNext={handleNext}
+              setShowRates={setShowRates}
+            />
+          ) : null}
+
+          {formError ? <ErrorText text={formError} /> : null}
+
+          {/* ✅ MODALS */}
+          {openDimsModal ? (
+            <Modal
+              title="Weight & Dimensions"
+              onClose={() => setOpenDimsModal(false)}
+            >
+              <div className="text-xs font-bold text-gray-600 mb-3">
+                Rows always sync with number of boxes.
+              </div>
+
+              <div className="overflow-auto rounded-md border border-black/10">
+                <table className="w-full text-sm min-w-[900px]">
+                  <thead className="bg-gray-50 text-[11px] uppercase font-extrabold text-gray-600 tracking-wider">
+                    <tr>
+                      <th className="px-2 py-3 text-center w-12">#</th>
+                      <th className="px-2 py-3 text-left">Qty</th>
+                      <th className="px-2 py-3 text-left">
+                        Wt. ({weightUnit})
+                      </th>
+                      <th className="px-2 py-3 text-left">
+                        L ({dimensionUnit})
+                      </th>
+                      <th className="px-2 py-3 text-left">
+                        B ({dimensionUnit})
+                      </th>
+                      <th className="px-2 py-3 text-left">
+                        H ({dimensionUnit})
+                      </th>
+                      <th className="px-2 py-3 text-right bg-gray-100 text-gray-800">
+                        Total Actual Wt.
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-gray-100">
+                    {boxRows.map((r, idx) => {
+                      const rowTotalWeight = (
+                        safeNum(r.qty) * safeNum(r.weight)
+                      ).toFixed(2);
+
+                      const err = dimInvalid[idx] || {};
+                      const dimInputClass = (bad) =>
+                        [
+                          "h-9 w-24 rounded border px-2 font-bold outline-none",
+                          bad
+                            ? "border-red-400 focus:border-red-600"
+                            : "border-gray-300 focus:border-black",
+                        ].join(" ");
+
+                      return (
+                        <tr key={idx}>
+                          <td className="px-2 py-2 text-center font-extrabold text-gray-700">
+                            {idx + 1}
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={r.qty}
+                              onChange={(e) =>
+                                updateDimRow(idx, {
+                                  qty: clampInt(e.target.value, 1, 999999),
+                                })
+                              }
+                              className="h-9 w-16 rounded border border-gray-300 px-2 font-bold text-center outline-none focus:border-black"
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.weight}
+                              onChange={(e) =>
+                                updateDimRow(idx, { weight: e.target.value })
+                              }
+                              className={dimInputClass(err.weight)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.length}
+                              onChange={(e) =>
+                                updateDimRow(idx, { length: e.target.value })
+                              }
+                              className={dimInputClass(err.length)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.breadth}
+                              onChange={(e) =>
+                                updateDimRow(idx, { breadth: e.target.value })
+                              }
+                              className={dimInputClass(err.breadth)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.height}
+                              onChange={(e) =>
+                                updateDimRow(idx, { height: e.target.value })
+                              }
+                              className={dimInputClass(err.height)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2 text-right bg-gray-50 font-extrabold">
+                            {rowTotalWeight}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setOpenDimsModal(false)}
+                  className="rounded-md bg-black px-8 py-2.5 text-sm font-extrabold text-white hover:bg-gray-800 shadow-sm"
                 >
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                    <MiniInput
-                      label="Qty"
-                      type="number"
-                      min={1}
-                      value={row.qty}
-                      onChange={(e) => handleQtyChange(idx, e.target.value)}
-                    />
-
-                    <MiniInput
-                      label={`Weight (${weightUnit})`}
-                      type="number"
-                      invalid={missingFields[`row_${idx}_weight`]}
-                      min={0}
-                      value={row.weight}
-                      onChange={(e) =>
-                        handleRowFieldChange(idx, "weight", e.target.value)
-                      }
-                    />
-
-                    <MiniInput
-                      label={`Length (${dimensionUnit})`}
-                      type="number"
-                      invalid={missingFields[`row_${idx}_length`]}
-                      min={1}
-                      value={row.length}
-                      onChange={(e) =>
-                        handleRowFieldChange(idx, "length", e.target.value)
-                      }
-                    />
-
-                    <MiniInput
-                      label={`Breadth (${dimensionUnit})`}
-                      type="number"
-                      invalid={missingFields[`row_${idx}_breadth`]}
-                      min={1}
-                      value={row.breadth}
-                      onChange={(e) =>
-                        handleRowFieldChange(idx, "breadth", e.target.value)
-                      }
-                    />
-
-                    <MiniInput
-                      label={`Height (${dimensionUnit})`}
-                      type="number"
-                      invalid={missingFields[`row_${idx}_height`]}
-                      min={1}
-                      value={row.height}
-                      onChange={(e) =>
-                        handleRowFieldChange(idx, "height", e.target.value)
-                      }
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                  Save Dimensions
+                </button>
+              </div>
+            </Modal>
           ) : null}
 
-          {/* ✅ Add Description: per box */}
-          {countBoxes > 0 ? (
-            <div className="mt-5 space-y-4">
-              {Array.from({ length: countBoxes }, (_, i) => i + 1).map(
-                (boxNo) => {
-                  const rows = goodsByBox[boxNo] || [];
-                  return (
-                    <div
-                      key={boxNo}
-                      className="rounded-md border border-black/10 bg-white p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-extrabold text-black">
-                          Box {boxNo} Contents
-                        </div>
+          {openGoodsModal ? (
+            <Modal
+              title="Shipment Contents"
+              onClose={() => setOpenGoodsModal(false)}
+            >
+              <div className="text-xs font-bold text-gray-600 mb-3">
+                Minimum 1 row per box. Auto synced with box count.
+              </div>
 
-                        <button
-                          type="button"
-                          onClick={() => addContentForBox(boxNo)}
-                          className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-gray-50 px-3 py-2 text-xs font-extrabold text-gray-900 hover:bg-gray-100"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add Content
-                        </button>
-                      </div>
+              <div className="overflow-auto rounded-md border border-black/10">
+                <table className="w-full text-sm min-w-[900px]">
+                  <thead className="bg-gray-50 text-[11px] uppercase font-extrabold text-gray-600 tracking-wider">
+                    <tr>
+                      <th className="px-2 py-3 text-center w-14">Box</th>
+                      <th className="px-2 py-3 text-left">Description</th>
+                      <th className="px-2 py-3 text-left w-32">HSN</th>
+                      <th className="px-2 py-3 text-left w-20">Qty</th>
+                      <th className="px-2 py-3 text-left w-24">Unit</th>
+                      <th className="px-2 py-3 text-left w-28">Rate</th>
+                      <th className="px-2 py-3 text-left w-28">Amt.</th>
+                      <th className="px-2 py-3 text-center w-20">Action</th>
+                    </tr>
+                  </thead>
 
-                      <div className="mt-3 space-y-3">
-                        {rows.map(({ row, index }) => (
-                          <div
-                            key={index}
-                            className="rounded-md border border-[#e5e7eb] bg-white p-3"
-                          >
-                            {/* ✅ 1 line fields */}
-                            <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
-                              <div className="sm:col-span-3">
-                                <MiniInput
-                                  label="Description"
-                                  invalid={
-                                    missingFields[`goods_${index}_description`]
-                                  }
-                                  value={row.description}
-                                  onChange={(e) =>
-                                    updateGoodsRow(index, {
-                                      description: e.target.value,
-                                    })
-                                  }
-                                  placeholder="Product name"
-                                />
-                              </div>
-                              <div className="sm:col-span-2">
-                                <MiniInput
-                                  label="HSN Code"
-                                  invalid={
-                                    missingFields[`goods_${index}_hsnCode`]
-                                  }
-                                  value={row.hsnCode}
-                                  onChange={(e) =>
-                                    updateGoodsRow(index, {
-                                      hsnCode: e.target.value.replace(
-                                        /[^\d]/g,
-                                        "",
-                                      ),
-                                    })
-                                  }
-                                  placeholder="HSN"
-                                />
-                              </div>
-                              <MiniInput
-                                label="Qty"
-                                type="number"
-                                min={1}
-                                invalid={missingFields[`goods_${index}_qty`]}
-                                value={row.qty}
-                                onChange={(e) =>
-                                  updateGoodsRow(index, { qty: e.target.value })
-                                }
-                              />
+                  <tbody className="divide-y divide-gray-100">
+                    {goodsRows.map((r, idx) => {
+                      const boxNo = Number(r.boxNo || 1);
+                      const canDelete =
+                        goodsRows.filter((x) => Number(x.boxNo || 1) === boxNo)
+                          .length > 1;
 
-                              {/* ✅ unit select PCS/KGS */}
-                              <div>
-                                <label className="block text-[11px] font-bold text-gray-500 tracking-wide">
-                                  Unit
-                                </label>
-                                <select
-                                  value={row.unit}
-                                  onChange={(e) =>
-                                    updateGoodsRow(index, {
-                                      unit: e.target.value,
-                                    })
-                                  }
-                                  className={[
-                                    "mt-2 h-10 w-full rounded-md px-3 text-sm font-semibold outline-none bg-white",
-                                    missingFields[`goods_${index}_unit`]
-                                      ? "border border-red-300 focus:ring-2 focus:ring-red-200"
-                                      : "border border-[#e5e7eb] text-[#111827] focus:ring-2 focus:ring-[#f2b632]/30",
-                                  ].join(" ")}
-                                >
-                                  <option value="PCS">PCS</option>
-                                  <option value="KGS">KGS</option>
-                                </select>
-                              </div>
+                      const err = goodsInvalid[idx] || {};
+                      const goodsInputClass = (bad) =>
+                        [
+                          "h-9 w-full rounded border px-2 outline-none",
+                          bad
+                            ? "border-red-400 focus:border-red-600"
+                            : "border-gray-300 focus:border-black",
+                        ].join(" ");
 
-                              <MiniInput
-                                label={`Rate (${currencyUnit})`}
-                                type="number"
-                                min={1}
-                                invalid={missingFields[`goods_${index}_rate`]}
-                                value={row.rate}
-                                onChange={(e) =>
-                                  updateGoodsRow(index, {
-                                    rate: e.target.value,
-                                  })
-                                }
-                              />
+                      return (
+                        <tr key={idx}>
+                          <td className="px-2 py-2 text-center font-extrabold">
+                            {boxNo}
+                          </td>
 
-                              <div className="">
-                                <label className="block text-[11px] font-bold text-gray-500 tracking-wide">
-                                  Amount ({currencyUnit})
-                                </label>
-                                <div className="mt-2 h-10 w-full rounded-md border border-[#e5e7eb] bg-gray-50 px-3 text-sm font-extrabold text-gray-900 flex items-center">
-                                  {Number(row.amount || 0).toFixed(2)}
-                                </div>
-                              </div>
+                          <td className="px-2 py-2">
+                            <input
+                              value={r.description}
+                              onChange={(e) =>
+                                updateGoodsRow(idx, {
+                                  description: e.target.value,
+                                })
+                              }
+                              className={goodsInputClass(err.description)}
+                            />
+                          </td>
 
-                              <div className="flex items-end justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => removeGoodsRow(index)}
-                                  className="grid h-10 w-10 place-items-center rounded-md border border-black/10 hover:bg-gray-50"
-                                  title="Remove"
-                                >
-                                  <Trash2 className="h-4 w-4 text-gray-700" />
-                                </button>
-                              </div>
+                          <td className="px-2 py-2">
+                            <input
+                              value={r.hsnCode}
+                              onChange={(e) =>
+                                updateGoodsRow(idx, {
+                                  hsnCode: e.target.value.replace(/[^\d]/g, ""),
+                                })
+                              }
+                              className={goodsInputClass(err.hsnCode)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={r.qty}
+                              onChange={(e) =>
+                                updateGoodsRow(idx, { qty: e.target.value })
+                              }
+                              className={[
+                                goodsInputClass(err.qty),
+                                "font-bold text-center",
+                              ].join(" ")}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <select
+                              value={r.unit}
+                              onChange={(e) =>
+                                updateGoodsRow(idx, { unit: e.target.value })
+                              }
+                              className="h-9 w-full rounded border border-gray-300 bg-white px-2 text-xs font-bold outline-none focus:border-black"
+                            >
+                              <option value="PCS">PCS</option>
+                              <option value="KGS">KGS</option>
+                              <option value="BOX">BOX</option>
+                              <option value="SET">SET</option>
+                            </select>
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.rate}
+                              onChange={(e) =>
+                                updateGoodsRow(idx, { rate: e.target.value })
+                              }
+                              className={goodsInputClass(err.rate)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-2">
+                            <div className="h-9 w-full rounded border border-gray-200 bg-gray-50 px-2 flex items-center font-extrabold text-gray-700">
+                              {Number(r.amount || 0).toFixed(2)}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          ) : null}
+                          </td>
 
-          {/* Back / Next */}
-          <div className="mt-7 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="rounded-md border border-gray-200 bg-gray-gray-50 px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-100 transition active:scale-[0.99]"
-            >
-              Back
-            </button>
+                          <td className="px-2 py-2 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => addGoodsRowBelow(idx)} // ✅ insert below current row
+                                className="grid h-8 w-8 place-items-center rounded-md border border-gray-200 hover:bg-black hover:text-white"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </button>
 
-            <button
-              type="button"
-              onClick={handleNext}
-              className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md transition hover:bg-gray-900 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-black/20"
-            >
-              Next
-            </button>
-          </div>
+                              <button
+                                type="button"
+                                onClick={() => removeGoodsRow(idx)}
+                                disabled={!canDelete}
+                                className={[
+                                  "grid h-8 w-8 place-items-center rounded-md border transition",
+                                  canDelete
+                                    ? "border-red-100 hover:bg-red-600 hover:text-white"
+                                    : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed",
+                                ].join(" ")}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-          {formError ? (
-            <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-extrabold tracking-wider text-red-700">
-              {formError}
-            </div>
+              <div className="mt-5 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setOpenGoodsModal(false)}
+                  className="rounded-md bg-black px-8 py-2.5 text-sm font-extrabold text-white hover:bg-gray-800 shadow-sm"
+                >
+                  Save Contents
+                </button>
+              </div>
+            </Modal>
           ) : null}
         </>
-      ) : null}
+      )}
     </>
   );
 }
 
-/** ✅ Field component unchanged */
-function Field({
-  label,
-  required,
-  icon,
-  hint,
-  hintType = "muted",
-  invalid,
-  children,
+/** ✅ Rates UI */
+function RatesUI({
+  rates,
+  selectedId,
+  expandedId,
+  onCardClick,
+  onToggleBreakup,
+  onBack,
+  onNext,
+  setShowRates,
 }) {
-  const hintClass =
-    hintType === "error"
-      ? "text-red-600"
-      : hintType === "success"
-        ? "text-emerald-700"
-        : "text-gray-500";
+  return (
+    <div className="mt-6">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-extrabold text-black">
+          Select Vendor Price
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowRates(false)}
+          className="text-xs font-extrabold text-gray-700 hover:underline"
+        >
+          Change Details
+        </button>
+      </div>
 
+      {rates.length === 0 ? (
+        <div className="rounded-md border border-black/10 bg-white p-5 text-sm font-extrabold text-gray-700">
+          No vendor rates available.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {rates.map((rate) => {
+            const isSelected = rate.id === selectedId;
+            const isExpanded = rate.id === expandedId;
+
+            return (
+              <div
+                key={rate.id}
+                onClick={() => onCardClick(rate)}
+                className={[
+                  "cursor-pointer rounded-md border bg-white p-4 shadow-sm transition",
+                  isSelected
+                    ? "border-black ring-2 ring-black/20"
+                    : "border-black/10 hover:border-black/30",
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-extrabold tracking-wide text-black">
+                      {rate.vendorCode || "VENDOR"}
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-bold text-gray-600">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        TAT: {rate.tat || "-"}
+                      </span>
+
+                      <span className="inline-flex items-center gap-1">
+                        <Weight className="h-4 w-4" />
+                        Chargeable Wt:{" "}
+                        <span className="font-extrabold text-gray-900">
+                          {rate.chargeableWeight ?? "-"}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {isSelected ? (
+                    <div className="inline-flex items-center gap-2 rounded-md bg-black px-3 py-2 text-xs font-extrabold text-white">
+                      <PackageCheck className="h-4 w-4" />
+                      Selected
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex items-end justify-between">
+                  <div className="text-xs font-bold text-gray-500">
+                    Total Price
+                  </div>
+
+                  <div className="flex items-center gap-1 text-lg font-extrabold text-black">
+                    <IndianRupee className="h-5 w-5" />
+                    {Number(rate.price || 0).toFixed(2)}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleBreakup(rate.id);
+                  }}
+                  className="mt-4 inline-flex items-center gap-2 text-xs font-bold hover:underline"
+                >
+                  Price Breakup{" "}
+                  {isExpanded ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </button>
+
+                {isExpanded ? (
+                  <div className="mt-3 rounded-md border border-black/10 bg-gray-50 p-3">
+                    {Array.isArray(rate.breakup) && rate.breakup.length > 0 ? (
+                      <div className="space-y-2">
+                        {rate.breakup.map((b, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between text-xs font-bold text-gray-700"
+                          >
+                            <span>{b.label}</span>
+                            <span className="font-extrabold text-gray-900">
+                              ₹{Number(b.amount || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs font-bold text-gray-600">
+                        No breakup available.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-7 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-md border border-gray-200 bg-gray-50 px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-100"
+        >
+          Back
+        </button>
+
+        <button
+          type="button"
+          onClick={onNext}
+          className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** ✅ Modal */
+function Modal({ title, onClose, children }) {
+  // ✅ close on ESC
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[999] bg-black/50 p-4"
+      onMouseDown={(e) => {
+        // ✅ click outside to close
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      {/* ✅ Modal wrapper (prevents background scroll, enables internal scroll) */}
+      <div className="mx-auto flex h-full max-w-6xl items-center">
+        <div className="w-full overflow-hidden rounded-xl bg-white shadow-xl">
+          {/* ✅ sticky header */}
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
+            <div className="text-sm font-extrabold text-black">{title}</div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-9 w-9 place-items-center rounded-md border border-black/10 hover:bg-gray-50"
+            >
+              <X className="h-4 w-4 text-gray-700" />
+            </button>
+          </div>
+
+          {/* ✅ Scrollable content */}
+          <div className="max-h-[calc(100vh-150px)] overflow-y-auto p-6">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ErrorText({ text }) {
+  return (
+    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-extrabold tracking-wider text-red-700">
+      {text}
+    </div>
+  );
+}
+
+/* ✅ Field */
+function Field({ label, required, icon, invalid, children }) {
   return (
     <div>
       <label className="block text-sm font-bold tracking-wide text-[#111827]">
@@ -1047,14 +1724,9 @@ function Field({
         >
           {icon}
         </div>
+
         {children}
       </div>
-
-      {hint ? (
-        <p className={`mt-2 text-[11px] font-bold ${hintClass}`}>{hint}</p>
-      ) : (
-        <div className="mt-2 h-[14px]" />
-      )}
     </div>
   );
 }

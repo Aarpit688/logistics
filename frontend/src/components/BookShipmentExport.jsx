@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 
 import BookShipmentExportStep1 from "./BookShipmentExportStep1";
 import BookShipmentExportStep2 from "./BookShipmentExportStep2";
@@ -20,37 +20,10 @@ function buildExportBookingPayload(data) {
   const selectedRate = data?.selectedRate || null;
 
   const units = extra?.units || {};
-  const shipmentExtra = extra?.shipment || {};
+  const exportDetails = extra?.exportDetails || {};
   const boxes = extra?.boxes || {};
+  const goods = extra?.goods || {};
 
-  const shipmentType = shipment.shipmentType || "Non-Document";
-  const isDocument = shipmentType === "Document";
-  const isNonDocument = shipmentType === "Non-Document";
-
-  const boxesRows = boxes?.rows || [];
-
-  // ✅ weights
-  const actualWeight = isNonDocument
-    ? calcActualWeightFromBoxes(boxesRows)
-    : Number(shipmentExtra.docWeight || 0);
-
-  const volumetricWeight = isNonDocument
-    ? calcVolumetricWeight({
-        shipmentType,
-        boxesRows,
-        dimensionUnit: units.dimensionUnit || "CM",
-        weightUnit: units.weightUnit || "KG",
-      })
-    : 0;
-
-  const chargeableWeight = calcChargeableWeight({
-    actualWeight,
-    volumetricWeight,
-  });
-
-  /** ✅ Strip File objects into metadata for JSON
-   * Files will go separately in FormData
-   */
   const docs = Array.isArray(addresses.documents) ? addresses.documents : [];
   const docsMeta = docs.map((d) => ({
     type: d.type,
@@ -60,20 +33,42 @@ function buildExportBookingPayload(data) {
     fileSize: d.file?.size || 0,
   }));
 
-  /** ✅ final optimized JSON payload (EXPORT) */
+  const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT"; // DOCUMENT | NON_DOCUMENT
+  const nonDocCategory = shipment.nonDocCategory || ""; // COURIER_SAMPLE / AMAZON_FBA / ECOMMERCE / etc.
+
+  // ✅ weights calculation
+  const isDocument = shipmentMainType === "DOCUMENT";
+  const actualWeight = isDocument
+    ? Number(exportDetails.docWeight || 0)
+    : calcActualWeightFromBoxes(boxes?.rows || []);
+
+  const volumetricWeight = isDocument
+    ? 0
+    : calcVolumetricWeight({
+        shipmentType: "EXPORT",
+        boxesRows: boxes?.rows || [],
+        dimensionUnit: units.dimensionUnit || "CM",
+        weightUnit: units.weightUnit || "KG",
+      });
+
+  const chargeableWeight = calcChargeableWeight({
+    actualWeight,
+    volumetricWeight,
+  });
+
   const payload = {
     shipment: {
-      shipmentType,
-      // origin fixed India, destination selected
+      shipmentMainType,
+      nonDocCategory,
+
       originCountry: shipment.originCountry || "INDIA",
       destinationCountry: shipment.destinationCountry || "",
+      destinationCountryId: shipment.destinationCountryId || "",
 
-      // origin (India)
       originPincode: shipment.originPincode || "",
       originCity: shipment.originCity || "",
       originState: shipment.originState || "",
 
-      // destination (international)
       destinationZip: shipment.destZip || "",
       destinationCity: shipment.destCity || "",
       destinationState: shipment.destState || "",
@@ -85,34 +80,17 @@ function buildExportBookingPayload(data) {
       dimensionUnit: units.dimensionUnit || "CM",
     },
 
-    shipmentDetails: {
-      referenceNumber: shipmentExtra.referenceNumber || "",
-      isCOD: !!shipmentExtra.isCOD,
-
-      ...(isNonDocument
-        ? {
-            contentDescription: shipmentExtra.contentDescription || "",
-            declaredValue: Number(shipmentExtra.declaredValue || 0),
-            // export may not use ewaybill but keeping optional
-            ewaybillNumber: shipmentExtra.ewaybillNumber || "",
-          }
-        : {
-            docWeight: Number(shipmentExtra.docWeight || 0),
-          }),
+    exportDetails: {
+      ...exportDetails,
     },
 
-    package: isNonDocument
-      ? {
-          boxesCount: Number(boxes.boxesCount || 0),
-          rows: boxesRows.map((r) => ({
-            qty: Number(r.qty || 0),
-            weight: Number(r.weight || 0),
-            length: Number(r.length || 0),
-            breadth: Number(r.breadth || 0),
-            height: Number(r.height || 0),
-          })),
-        }
-      : null,
+    boxes: {
+      ...boxes,
+    },
+
+    goods: {
+      ...goods,
+    },
 
     weights: {
       actualWeight: Number(actualWeight.toFixed(2)),
@@ -154,9 +132,7 @@ function buildExportFormData(data) {
     : [];
 
   docs.forEach((d, idx) => {
-    if (d?.file) {
-      fd.append(`documents[${idx}]`, d.file);
-    }
+    if (d?.file) fd.append(`documents[${idx}]`, d.file);
   });
 
   return { payload, formData: fd };
@@ -169,75 +145,86 @@ export default function BookShipmentExport({
   onNext,
   onBack,
 }) {
-  /** ✅ Create rates dynamically from entered details */
-  const rates = useMemo(() => {
+  const [rates, setRates] = useState([]);
+
+  /** ✅ Parent computes rates on demand (Step2 Check Rates) */
+  const computeRates = () => {
     const shipment = data?.shipment || {};
     const extra = data?.extra || {};
-
     const units = extra?.units || {};
-    const shipmentExtra = extra?.shipment || {};
+    const exportDetails = extra?.exportDetails || {};
     const boxes = extra?.boxes || {};
 
-    const shipmentType = shipment.shipmentType || "Non-Document";
-    const isNonDocument = shipmentType === "Non-Document";
-
-    // ✅ Export inputs
     const originPincode = shipment.originPincode || "";
     const destinationCountry = shipment.destinationCountry || "";
-
     const destZip = shipment.destZip || "";
     const destCity = shipment.destCity || "";
+    const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
 
-    // weights
-    const actualWeight = isNonDocument
-      ? calcActualWeightFromBoxes(boxes?.rows || [])
-      : Number(shipmentExtra.docWeight || 0);
+    const weightUnit = units.weightUnit || "KG";
+    const dimensionUnit = units.dimensionUnit || "CM";
 
-    const volumetricWeight = isNonDocument
-      ? calcVolumetricWeight({
-          shipmentType,
-          boxesRows: boxes?.rows || [],
-          dimensionUnit: units.dimensionUnit || "CM",
-          weightUnit: units.weightUnit || "KG",
-        })
-      : 0;
+    const actualWeight =
+      shipmentMainType === "DOCUMENT"
+        ? Number(exportDetails.docWeight || 0)
+        : calcActualWeightFromBoxes(boxes?.rows || []);
+
+    const volumetricWeight =
+      shipmentMainType === "DOCUMENT"
+        ? 0
+        : calcVolumetricWeight({
+            shipmentType: "EXPORT",
+            boxesRows: boxes?.rows || [],
+            dimensionUnit,
+            weightUnit,
+          });
 
     const chargeableWeight = calcChargeableWeight({
       actualWeight,
       volumetricWeight,
     });
 
-    // COD (normally false for export, but still allowed if you enable)
-    const isCOD = !!shipmentExtra.isCOD;
-
-    // ✅ generate only if required inputs exist
     if (
       !originPincode ||
       !destinationCountry ||
       !destZip ||
       chargeableWeight <= 0
-    )
+    ) {
+      setRates([]);
       return [];
+    }
 
-    return generateVendorRates({
-      // ✅ use same interface, but include export destination inputs
+    const next = generateVendorRates({
       originPincode,
-      destPincode: destZip, // for export, treat zip as destination code
+      destPincode: destZip,
       shipmentType: "EXPORT",
-      isCOD,
+      isCOD: false,
       chargeableWeight,
-
-      // extra signals you may use inside engine (optional)
       destinationCountry,
       destinationCity: destCity,
     });
-  }, [data]);
+
+    setRates(next);
+    return next;
+  };
+
+  /** ✅ Step2 special handler: check rates / next */
+  const handleStep2Next = (meta) => {
+    // meta = { action: "CHECK_RATES" } or { action: "NEXT" }
+    if (meta?.action === "CHECK_RATES") {
+      computeRates();
+      return; // ✅ stay on same step
+    }
+    if (meta?.action === "NEXT") {
+      onNext?.(); // ✅ move step 3
+      return;
+    }
+    onNext?.();
+  };
 
   /** ✅ final submit */
   const finalSubmit = () => {
     const { payload, formData } = buildExportFormData(data);
-
-    // payload & formData ready for backend
     onNext?.({ payload, formData });
   };
 
@@ -254,9 +241,9 @@ export default function BookShipmentExport({
   if (step === 2) {
     return (
       <BookShipmentExportStep2
-        data={data}
+        data={{ ...data, rates }}
         onChange={onChange}
-        onNext={onNext}
+        onNext={handleStep2Next}
         onBack={onBack}
       />
     );
