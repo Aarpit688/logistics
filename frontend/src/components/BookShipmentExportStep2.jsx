@@ -19,12 +19,10 @@ function clampInt(val, min, max) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
-
 function safeNum(v) {
   const n = Number(v);
   return Number.isNaN(n) ? 0 : n;
 }
-
 function makeGoodsRow(boxNo = 1) {
   return {
     boxNo,
@@ -37,11 +35,6 @@ function makeGoodsRow(boxNo = 1) {
   };
 }
 
-/**
- * ✅ SIMPLE SYNC HELPERS
- * - Dimensions: always EXACTLY count rows
- * - Goods: keep existing rows but ensure MIN 1 row per box
- */
 function ensureDimRows(count, existingRows) {
   const c = clampInt(count || 1, 1, 9999);
   const base = Array.isArray(existingRows) ? existingRows : [];
@@ -59,10 +52,8 @@ function ensureGoodsRows(count, existingRows) {
   const c = clampInt(count || 1, 1, 9999);
   const base = Array.isArray(existingRows) ? existingRows : [];
 
-  // keep only valid box rows
   let filtered = base.filter((r) => Number(r?.boxNo || 1) <= c);
 
-  // ensure min 1 row per box
   const grouped = {};
   filtered.forEach((r) => {
     const b = Number(r?.boxNo || 1);
@@ -75,6 +66,88 @@ function ensureGoodsRows(count, existingRows) {
 
   filtered.sort((a, b) => Number(a.boxNo || 1) - Number(b.boxNo || 1));
   return filtered;
+}
+
+function rebalanceDimRowsByQty(boxesCount, rows, changedIdx, nextQtyRaw) {
+  const totalBoxes = clampInt(boxesCount || 1, 1, 9999);
+  const base = Array.isArray(rows) ? [...rows] : [];
+
+  if (!base.length)
+    base.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
+
+  const nextQty = clampInt(nextQtyRaw, 1, totalBoxes);
+
+  base[changedIdx] = {
+    ...base[changedIdx],
+    qty: nextQty,
+  };
+
+  const normalized = base.map((r) => ({
+    ...r,
+    qty: clampInt(r.qty || 1, 1, totalBoxes),
+  }));
+
+  const sum = normalized.reduce(
+    (s, r) => s + clampInt(r.qty || 1, 1, totalBoxes),
+    0,
+  );
+
+  if (sum === totalBoxes) return normalized;
+
+  if (sum < totalBoxes) {
+    let remaining = totalBoxes - sum;
+    const out = [...normalized];
+    while (remaining > 0) {
+      out.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
+      remaining -= 1;
+    }
+    return out;
+  }
+
+  let extra = sum - totalBoxes;
+  const out = [...normalized];
+
+  for (let i = out.length - 1; i >= 0 && extra > 0; i--) {
+    if (i === changedIdx) continue;
+    const q = clampInt(out[i].qty || 1, 1, totalBoxes);
+
+    const reducible = q - 1;
+    if (reducible <= 0) continue;
+
+    const dec = Math.min(reducible, extra);
+    out[i] = { ...out[i], qty: q - dec };
+    extra -= dec;
+  }
+
+  if (extra > 0) {
+    const q = clampInt(out[changedIdx].qty || 1, 1, totalBoxes);
+    const reducible = q - 1;
+    const dec = Math.min(reducible, extra);
+    out[changedIdx] = { ...out[changedIdx], qty: q - dec };
+    extra -= dec;
+  }
+
+  const finalRows = out.filter((r) => clampInt(r.qty || 1, 1, totalBoxes) >= 1);
+
+  let s2 = finalRows.reduce(
+    (s, r) => s + clampInt(r.qty || 1, 1, totalBoxes),
+    0,
+  );
+
+  while (s2 > totalBoxes && finalRows.length > 1) {
+    const last = finalRows[finalRows.length - 1];
+    const q = clampInt(last.qty || 1, 1, totalBoxes);
+
+    if (q > 1) {
+      finalRows[finalRows.length - 1] = { ...last, qty: q - 1 };
+      s2 -= 1;
+    } else {
+      finalRows.pop();
+      s2 -= 1;
+    }
+  }
+
+  return finalRows;
 }
 
 /* ✅ dropdowns */
@@ -100,9 +173,12 @@ export default function BookShipmentExportStep2({
   const shipment = data?.shipment || {};
   const extra = data?.extra || {};
 
-  /** ✅ from Step1 */
+  /**
+   * ✅ shipment type must come from Step1
+   * DO NOT allow changing here
+   */
   const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
-  const nonDocCategory = shipment.nonDocCategory || "COURIER_SAMPLE";
+  const nonDocCategory = shipment.nonDocCategory || "COURIER";
   const isDocument = shipmentMainType === "DOCUMENT";
 
   /** ✅ rates from parent */
@@ -135,14 +211,14 @@ export default function BookShipmentExportStep2({
   const gstInvoice = exportDetails.gstInvoice ?? false;
   const exportReason = exportDetails.exportReason || "";
 
-  // ✅ category logic
+  /** ✅ category logic */
   const isCommercialOrCSBV =
     String(nonDocCategory || "").toUpperCase() === "COMMERCIAL" ||
     String(nonDocCategory || "").toUpperCase() === "CSBV";
 
   // ✅ extra fields (Commercial / CSBV only)
   const iecNumber = exportDetails.iecNumber || "";
-  const lutIgst = exportDetails.lutIgst || ""; // "LUT" | "IGST"
+  const lutIgst = exportDetails.lutIgst || "";
   const lutNumber = exportDetails.lutNumber || "";
   const lutIssueDate = exportDetails.lutIssueDate || "";
   const totalIgst = exportDetails.totalIgst || "";
@@ -152,7 +228,7 @@ export default function BookShipmentExportStep2({
   const firmType = exportDetails.firmType || "";
   const nfei = exportDetails.nfei ?? false;
 
-  // extra charges (as per image)
+  // charges
   const fobValue = exportDetails.fobValue || "";
   const freightCharges = exportDetails.freightCharges || "";
   const insurance = exportDetails.insurance || "";
@@ -180,8 +256,8 @@ export default function BookShipmentExportStep2({
   const [openDimsModal, setOpenDimsModal] = useState(false);
   const [openGoodsModal, setOpenGoodsModal] = useState(false);
 
-  const [dimInvalid, setDimInvalid] = useState({}); // { [idx]: { weight:true, length:true, breadth:true, height:true } }
-  const [goodsInvalid, setGoodsInvalid] = useState({}); // { [idx]: { description:true, hsnCode:true, qty:true, rate:true } }
+  const [dimInvalid, setDimInvalid] = useState({});
+  const [goodsInvalid, setGoodsInvalid] = useState({});
 
   /** patch helpers */
   const patchExtra = (patch) => onChange?.({ extra: { ...extra, ...patch } });
@@ -194,10 +270,8 @@ export default function BookShipmentExportStep2({
   useEffect(() => {
     const isOpen = openDimsModal || openGoodsModal;
     if (!isOpen) return;
-
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-
     return () => {
       document.body.style.overflow = prev || "";
     };
@@ -212,7 +286,7 @@ export default function BookShipmentExportStep2({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDocument]);
 
-  /** ✅ cleanup when flow changes */
+  /** ✅ cleanup when flow changes (based on Step1 type) */
   useEffect(() => {
     setMissingFields({});
     setFormError("");
@@ -225,13 +299,9 @@ export default function BookShipmentExportStep2({
       patchGoods({ rows: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDocument, nonDocCategory]);
+  }, [shipmentMainType]);
 
-  /**
-   * ✅ SIMPLE + RELIABLE SYNC
-   * - ALWAYS ensure dims has exactly boxesCount rows
-   * - ALWAYS ensure goods has min 1 row per box
-   */
+  /** ✅ Sync rows for Non-doc */
   useEffect(() => {
     if (isDocument) return;
 
@@ -325,6 +395,7 @@ export default function BookShipmentExportStep2({
       if (safeNum(r.length) <= 0) rowBad.length = true;
       if (safeNum(r.breadth) <= 0) rowBad.breadth = true;
       if (safeNum(r.height) <= 0) rowBad.height = true;
+      if (safeNum(r.qty) <= 0) rowBad.qty = true;
 
       if (Object.keys(rowBad).length) bad[idx] = rowBad;
     });
@@ -356,6 +427,7 @@ export default function BookShipmentExportStep2({
     if (!invoiceDate) missing.invoiceDate = true;
     if (boxesCount < 1) missing.boxesCount = true;
     if (!generalGoodsDescription) missing.generalGoodsDescription = true;
+
     if (isCommercialOrCSBV) {
       if (!iecNumber) missing.iecNumber = true;
       if (!lutIgst) missing.lutIgst = true;
@@ -374,7 +446,6 @@ export default function BookShipmentExportStep2({
       if (!bankADCode) missing.bankADCode = true;
       if (!firmType) missing.firmType = true;
 
-      // charges required
       if (!fobValue) missing.fobValue = true;
       if (!freightCharges) missing.freightCharges = true;
       if (!insurance) missing.insurance = true;
@@ -388,7 +459,6 @@ export default function BookShipmentExportStep2({
       return false;
     }
 
-    // ✅ also validate modal required rows
     const okDims = validateDimsRows();
     const okGoods = validateGoodsRows();
 
@@ -432,6 +502,11 @@ export default function BookShipmentExportStep2({
     patchBoxes({ rows: next });
   };
 
+  const updateDimQtyWithRebalance = (idx, nextQty) => {
+    const nextRows = rebalanceDimRowsByQty(boxesCount, boxRows, idx, nextQty);
+    patchBoxes({ rows: nextRows });
+  };
+
   /** ===========================
    * ✅ MODAL: Shipment Content
    * =========================== */
@@ -440,8 +515,7 @@ export default function BookShipmentExportStep2({
     const boxNo = Number(row?.boxNo || 1);
 
     const next = [...goodsRows];
-    next.splice(idx + 1, 0, makeGoodsRow(boxNo)); // ✅ insert below clicked row
-
+    next.splice(idx + 1, 0, makeGoodsRow(boxNo));
     patchGoods({ rows: next });
   };
 
@@ -459,9 +533,7 @@ export default function BookShipmentExportStep2({
     const remaining = goodsRows.filter((_, i) => i !== idx);
     const stillHas = remaining.some((r) => Number(r.boxNo || 1) === boxNo);
 
-    // cannot delete last row of a box
     if (!stillHas) return;
-
     patchGoods({ rows: remaining });
   };
 
@@ -471,6 +543,16 @@ export default function BookShipmentExportStep2({
         <h3 className="text-base font-extrabold text-black tracking-wide">
           Export Shipment Details
         </h3>
+
+        {/* ✅ info banner (type selected in step1) */}
+        <div className="mt-2 rounded-md border border-black/10 bg-gray-50 px-4 py-3 text-xs font-extrabold text-gray-700">
+          Shipment Type selected:{" "}
+          <span className="text-black">
+            {shipmentMainType === "DOCUMENT"
+              ? "Document"
+              : `Non-Document (${nonDocCategory})`}
+          </span>
+        </div>
       </div>
 
       {/* ✅ Document Flow */}
@@ -720,11 +802,10 @@ export default function BookShipmentExportStep2({
             </Field>
           </div>
 
-          {/* ✅ EXTRA FIELDS for COMMERCIAL / CSBV */}
+          {/* ✅ EXTRA FIELDS for COMMERCIAL / CSBV (FIXED + WORKING) */}
           {isCommercialOrCSBV ? (
             <>
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {/* ✅ GST Invoice */}
                 <Field
                   label="GST INVOICE?"
                   required
@@ -757,7 +838,6 @@ export default function BookShipmentExportStep2({
                   </div>
                 </Field>
 
-                {/* ✅ IEC Number */}
                 <Field
                   label="IEC NUMBER"
                   required
@@ -776,7 +856,6 @@ export default function BookShipmentExportStep2({
                   />
                 </Field>
 
-                {/* ✅ LUT / IGST */}
                 <Field
                   label="LUT / IGST"
                   required
@@ -802,7 +881,6 @@ export default function BookShipmentExportStep2({
                 </Field>
               </div>
 
-              {/* LUT dependent */}
               {lutIgst === "LUT" ? (
                 <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <Field
@@ -836,7 +914,6 @@ export default function BookShipmentExportStep2({
                     />
                   </Field>
 
-                  {/* NFEI checkbox */}
                   <Field
                     label="NFEI"
                     required={false}
@@ -860,7 +937,6 @@ export default function BookShipmentExportStep2({
                 </div>
               ) : null}
 
-              {/* IGST dependent */}
               {lutIgst === "IGST" ? (
                 <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <Field
@@ -882,7 +958,6 @@ export default function BookShipmentExportStep2({
                 </div>
               ) : null}
 
-              {/* ✅ Bank details */}
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Field
                   label="BANK A/C NUMBER"
@@ -932,7 +1007,6 @@ export default function BookShipmentExportStep2({
                 </Field>
               </div>
 
-              {/* ✅ Firm Type */}
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Field
                   label="FIRM TYPE"
@@ -951,7 +1025,6 @@ export default function BookShipmentExportStep2({
                 </Field>
               </div>
 
-              {/* ✅ Charges */}
               <div className="mt-5 rounded-md border border-black/10 bg-white p-4">
                 <div className="text-sm font-extrabold text-black mb-3">
                   Charges
@@ -1112,7 +1185,6 @@ export default function BookShipmentExportStep2({
             <button
               type="button"
               onClick={() => {
-                // ✅ ensure rows exist BEFORE modal opens
                 patchBoxes({ rows: ensureDimRows(boxesCount, boxRows) });
                 setOpenDimsModal(true);
               }}
@@ -1124,7 +1196,6 @@ export default function BookShipmentExportStep2({
             <button
               type="button"
               onClick={() => {
-                // ✅ ensure rows exist BEFORE modal opens
                 patchGoods({ rows: ensureGoodsRows(boxesCount, goodsRows) });
                 setOpenGoodsModal(true);
               }}
@@ -1195,7 +1266,8 @@ export default function BookShipmentExportStep2({
               onClose={() => setOpenDimsModal(false)}
             >
               <div className="text-xs font-bold text-gray-600 mb-3">
-                Rows always sync with number of boxes.
+                Qty based row rebalance is enabled. Sum of qty must match number
+                of boxes.
               </div>
 
               <div className="overflow-auto rounded-md border border-black/10">
@@ -1249,11 +1321,17 @@ export default function BookShipmentExportStep2({
                               min={1}
                               value={r.qty}
                               onChange={(e) =>
-                                updateDimRow(idx, {
-                                  qty: clampInt(e.target.value, 1, 999999),
-                                })
+                                updateDimQtyWithRebalance(
+                                  idx,
+                                  clampInt(e.target.value, 1, 999999),
+                                )
                               }
-                              className="h-9 w-16 rounded border border-gray-300 px-2 font-bold text-center outline-none focus:border-black"
+                              className={[
+                                "h-9 w-16 rounded border px-2 font-bold text-center outline-none",
+                                err.qty
+                                  ? "border-red-400 focus:border-red-600"
+                                  : "border-gray-300 focus:border-black",
+                              ].join(" ")}
                             />
                           </td>
 
@@ -1449,7 +1527,7 @@ export default function BookShipmentExportStep2({
                             <div className="flex items-center justify-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => addGoodsRowBelow(idx)} // ✅ insert below current row
+                                onClick={() => addGoodsRowBelow(idx)}
                                 className="grid h-8 w-8 place-items-center rounded-md border border-gray-200 hover:bg-black hover:text-white"
                               >
                                 <Plus className="h-4 w-4" />
@@ -1650,7 +1728,6 @@ function RatesUI({
 
 /** ✅ Modal */
 function Modal({ title, onClose, children }) {
-  // ✅ close on ESC
   useEffect(() => {
     const handler = (e) => {
       if (e.key === "Escape") onClose?.();
@@ -1663,14 +1740,11 @@ function Modal({ title, onClose, children }) {
     <div
       className="fixed inset-0 z-[999] bg-black/50 p-4"
       onMouseDown={(e) => {
-        // ✅ click outside to close
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
-      {/* ✅ Modal wrapper (prevents background scroll, enables internal scroll) */}
       <div className="mx-auto flex h-full max-w-6xl items-center">
         <div className="w-full overflow-hidden rounded-xl bg-white shadow-xl">
-          {/* ✅ sticky header */}
           <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
             <div className="text-sm font-extrabold text-black">{title}</div>
             <button
@@ -1682,7 +1756,6 @@ function Modal({ title, onClose, children }) {
             </button>
           </div>
 
-          {/* ✅ Scrollable content */}
           <div className="max-h-[calc(100vh-150px)] overflow-y-auto p-6">
             {children}
           </div>

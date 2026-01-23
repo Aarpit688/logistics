@@ -65,26 +65,21 @@ async function checkZipcodeAPI(countryId, zipcode) {
   }
 }
 
-/** ✅ Shipment types (image mapping) */
-const MAIN_SHIPMENT_TYPES = [
-  { value: "DOCUMENT", label: "Document" },
-  { value: "NON_DOCUMENT", label: "Non-Document" },
-];
-
-const NON_DOC_SUBTYPES = [
-  { value: "COMMERCIAL", label: "Commercial" },
-  { value: "CSB_V", label: "CSB-V" },
-  { value: "ECOMMERCE", label: "Ecommerce" },
+/** ✅ same categories Step2 expects */
+const NON_DOC_CATEGORIES = [
+  { value: "COURIER", label: "Courier / Sample" },
   { value: "AMAZON_FBA", label: "Amazon FBA" },
-  { value: "COURIER_SAMPLE", label: "Courier / Sample" },
+  { value: "ECOMMERCE", label: "E-Commerce" },
+  { value: "COMMERCIAL", label: "Commercial" },
+  { value: "CSBV", label: "CSBV" },
 ];
 
 export default function BookShipmentExportStep1({ data, onChange, onNext }) {
   const shipment = data?.shipment || {};
 
-  // ✅ NEW top fields
-  const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT"; // DOCUMENT | NON_DOCUMENT
-  const nonDocSubtype = shipment.nonDocSubtype || "COMMERCIAL"; // only if NON_DOCUMENT
+  const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
+  const nonDocCategory = shipment.nonDocCategory || "COURIER";
+  const isDocument = shipmentMainType === "DOCUMENT";
 
   // Existing Fields
   const originCountry = shipment.originCountry || "INDIA";
@@ -126,6 +121,12 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
 
   useEffect(() => {
     if (!shipment.originCountry) patchShipment({ originCountry: "INDIA" });
+
+    // ✅ ensure defaults exist
+    if (!shipment.shipmentMainType)
+      patchShipment({ shipmentMainType: "NON_DOCUMENT" });
+    if (!shipment.nonDocCategory) patchShipment({ nonDocCategory: "COURIER" });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -223,12 +224,10 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
   const validateStep1 = () => {
     const missing = {};
 
-    // ✅ NEW top validations
     if (!shipmentMainType) missing.shipmentMainType = true;
-    if (shipmentMainType === "NON_DOCUMENT" && !nonDocSubtype)
-      missing.nonDocSubtype = true;
+    if (shipmentMainType === "NON_DOCUMENT" && !nonDocCategory)
+      missing.nonDocCategory = true;
 
-    // existing validations
     if (!originCountry) missing.originCountry = true;
     if (!destinationCountry) missing.destinationCountry = true;
     if (!originPincode) missing.originPincode = true;
@@ -247,6 +246,77 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
     return true;
   };
 
+  /** ✅ Extracted Shipment Type UI from Step2 */
+  const ShipmentTypeRadios = () => (
+    <div className="mb-6 rounded-md border border-black/10 bg-white p-4">
+      <div className="text-sm font-extrabold text-black mb-3">
+        Shipment Type
+      </div>
+
+      <div className="flex flex-wrap items-center gap-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-extrabold text-gray-900">
+          <input
+            type="radio"
+            checked={shipmentMainType === "DOCUMENT"}
+            onChange={() =>
+              patchShipment({
+                shipmentMainType: "DOCUMENT",
+                nonDocCategory: "",
+              })
+            }
+            className="h-4 w-4 accent-black"
+          />
+          Document
+        </label>
+
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-extrabold text-gray-900">
+          <input
+            type="radio"
+            checked={shipmentMainType === "NON_DOCUMENT"}
+            onChange={() =>
+              patchShipment({
+                shipmentMainType: "NON_DOCUMENT",
+                nonDocCategory: nonDocCategory || "COURIER",
+              })
+            }
+            className="h-4 w-4 accent-black"
+          />
+          Non-Document
+        </label>
+      </div>
+
+      {!isDocument ? (
+        <div className="mt-4">
+          <div className="text-sm font-extrabold text-black mb-3">
+            Non-Document Category
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {NON_DOC_CATEGORIES.map((c) => (
+              <label
+                key={c.value}
+                className={[
+                  "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-3 text-sm font-extrabold",
+                  nonDocCategory === c.value
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-white text-gray-900 hover:border-black/30",
+                ].join(" ")}
+              >
+                <input
+                  type="radio"
+                  checked={nonDocCategory === c.value}
+                  onChange={() => patchShipment({ nonDocCategory: c.value })}
+                  className="h-4 w-4 accent-black"
+                />
+                {c.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <>
       <div className="mb-5">
@@ -255,88 +325,17 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
         </h3>
       </div>
 
-      {/* ✅ NEW: Shipment Type section at top */}
-      <div className="mb-6 rounded-md border border-black/10 bg-white p-4">
-        <h4 className="text-sm font-extrabold text-black tracking-wide">
-          Shipment Type
-        </h4>
+      {/* ✅ NEW: Shipment Type UI (from step2) */}
+      <ShipmentTypeRadios />
 
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-          {/* Main type */}
-          <Field
-            label="TYPE"
-            required
-            invalid={missingFields.shipmentMainType}
-            icon={<Map className="h-4 w-4 text-[#6b7280]" />}
-          >
-            <div className="relative w-full">
-              <select
-                value={shipmentMainType}
-                onChange={(e) => {
-                  const v = e.target.value;
-
-                  // save main type
-                  patchShipment({
-                    shipmentMainType: v,
-                    // if switching to document, clear subtype
-                    nonDocSubtype:
-                      v === "DOCUMENT" ? "" : nonDocSubtype || "COMMERCIAL",
-                  });
-                }}
-                className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
-              >
-                {MAIN_SHIPMENT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-            </div>
-          </Field>
-
-          {/* Non doc subtype */}
-          {shipmentMainType === "NON_DOCUMENT" ? (
-            <Field
-              label="NON-DOCUMENT CATEGORY"
-              required
-              invalid={missingFields.nonDocSubtype}
-              icon={<Map className="h-4 w-4 text-[#6b7280]" />}
-            >
-              <div className="relative w-full">
-                <select
-                  value={nonDocSubtype}
-                  onChange={(e) =>
-                    patchShipment({
-                      nonDocSubtype: e.target.value,
-                    })
-                  }
-                  className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
-                >
-                  <option value="" disabled>
-                    Select
-                  </option>
-                  {NON_DOC_SUBTYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-              </div>
-            </Field>
-          ) : (
-            <div />
-          )}
-        </div>
-      </div>
-
+      {/* rest step1 ui unchanged */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* =================== ORIGIN =================== */}
         <div className="rounded-md border border-black/10 bg-white p-4">
           <h4 className="text-sm font-extrabold text-black tracking-wide">
             Origin
           </h4>
+
           <div className="mt-4 grid grid-cols-1 gap-4">
             <Field
               label="ORIGIN COUNTRY"
@@ -350,6 +349,7 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 className="h-11 w-full cursor-not-allowed bg-gray-50 px-4 text-sm font-extrabold text-gray-900 outline-none"
               />
             </Field>
+
             <Field
               label="ORIGIN PIN CODE"
               required
@@ -374,6 +374,7 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
+
             <Field
               label="ORIGIN CITY"
               required
@@ -390,6 +391,7 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
               />
             </Field>
+
             <Field
               label="ORIGIN STATE"
               required
@@ -547,7 +549,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               )}
             </div>
 
-            {/* ✅ DESTINATION CITY */}
             <Field
               label="DESTINATION CITY"
               required
@@ -565,7 +566,6 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
               />
             </Field>
 
-            {/* ✅ DESTINATION STATE */}
             <Field
               label="DESTINATION STATE"
               required
@@ -607,7 +607,7 @@ export default function BookShipmentExportStep1({ data, onChange, onNext }) {
   );
 }
 
-/** ✅ Field Component */
+/** ✅ Field Component (unchanged) */
 function Field({
   label,
   required,
