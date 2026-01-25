@@ -11,6 +11,7 @@ import {
   ChevronUp,
   X,
   IndianRupee,
+  Loader2,
 } from "lucide-react";
 
 /* ✅ ---------- helpers ---------- */
@@ -35,17 +36,46 @@ function makeGoodsRow(boxNo = 1) {
   };
 }
 
-function ensureDimRows(count, existingRows) {
-  const c = clampInt(count || 1, 1, 9999);
-  const base = Array.isArray(existingRows) ? existingRows : [];
-
-  return Array.from({ length: c }).map((_, i) => ({
-    qty: base[i]?.qty ?? 1,
-    weight: base[i]?.weight ?? "",
-    length: base[i]?.length ?? "",
-    breadth: base[i]?.breadth ?? "",
-    height: base[i]?.height ?? "",
+function normalizeRowsToBoxes(rows, boxesCount) {
+  const safe = rows.map((r) => ({
+    qty: clampInt(r.qty ?? 1, 1, 999999),
+    weight: r.weight ?? "",
+    length: r.length ?? "",
+    breadth: r.breadth ?? "",
+    height: r.height ?? "",
   }));
+
+  if (!boxesCount || boxesCount < 1) return [];
+
+  let total = safe.reduce((a, r) => a + r.qty, 0);
+
+  if (safe.length === 0 || total === 0) {
+    return Array.from({ length: boxesCount }, () => ({
+      qty: 1,
+      weight: "",
+      length: "",
+      breadth: "",
+      height: "",
+    }));
+  }
+
+  while (total < boxesCount) {
+    safe.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
+    total++;
+  }
+
+  while (total > boxesCount && safe.length) {
+    const last = safe[safe.length - 1];
+    if (last.qty > 1) {
+      last.qty--;
+      total--;
+    } else {
+      safe.pop();
+      total--;
+    }
+  }
+
+  return safe;
 }
 
 function ensureGoodsRows(count, existingRows) {
@@ -68,88 +98,6 @@ function ensureGoodsRows(count, existingRows) {
   return filtered;
 }
 
-function rebalanceDimRowsByQty(boxesCount, rows, changedIdx, nextQtyRaw) {
-  const totalBoxes = clampInt(boxesCount || 1, 1, 9999);
-  const base = Array.isArray(rows) ? [...rows] : [];
-
-  if (!base.length)
-    base.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
-
-  const nextQty = clampInt(nextQtyRaw, 1, totalBoxes);
-
-  base[changedIdx] = {
-    ...base[changedIdx],
-    qty: nextQty,
-  };
-
-  const normalized = base.map((r) => ({
-    ...r,
-    qty: clampInt(r.qty || 1, 1, totalBoxes),
-  }));
-
-  const sum = normalized.reduce(
-    (s, r) => s + clampInt(r.qty || 1, 1, totalBoxes),
-    0,
-  );
-
-  if (sum === totalBoxes) return normalized;
-
-  if (sum < totalBoxes) {
-    let remaining = totalBoxes - sum;
-    const out = [...normalized];
-    while (remaining > 0) {
-      out.push({ qty: 1, weight: "", length: "", breadth: "", height: "" });
-      remaining -= 1;
-    }
-    return out;
-  }
-
-  let extra = sum - totalBoxes;
-  const out = [...normalized];
-
-  for (let i = out.length - 1; i >= 0 && extra > 0; i--) {
-    if (i === changedIdx) continue;
-    const q = clampInt(out[i].qty || 1, 1, totalBoxes);
-
-    const reducible = q - 1;
-    if (reducible <= 0) continue;
-
-    const dec = Math.min(reducible, extra);
-    out[i] = { ...out[i], qty: q - dec };
-    extra -= dec;
-  }
-
-  if (extra > 0) {
-    const q = clampInt(out[changedIdx].qty || 1, 1, totalBoxes);
-    const reducible = q - 1;
-    const dec = Math.min(reducible, extra);
-    out[changedIdx] = { ...out[changedIdx], qty: q - dec };
-    extra -= dec;
-  }
-
-  const finalRows = out.filter((r) => clampInt(r.qty || 1, 1, totalBoxes) >= 1);
-
-  let s2 = finalRows.reduce(
-    (s, r) => s + clampInt(r.qty || 1, 1, totalBoxes),
-    0,
-  );
-
-  while (s2 > totalBoxes && finalRows.length > 1) {
-    const last = finalRows[finalRows.length - 1];
-    const q = clampInt(last.qty || 1, 1, totalBoxes);
-
-    if (q > 1) {
-      finalRows[finalRows.length - 1] = { ...last, qty: q - 1 };
-      s2 -= 1;
-    } else {
-      finalRows.pop();
-      s2 -= 1;
-    }
-  }
-
-  return finalRows;
-}
-
 /* ✅ dropdowns */
 const EXPORT_FORMATS = [
   { value: "B2B", label: "B2B" },
@@ -166,6 +114,7 @@ const EXPORT_REASONS = [
 
 export default function BookShipmentExportStep2({
   data,
+  isLoadingRates,
   onChange,
   onNext,
   onBack,
@@ -173,50 +122,37 @@ export default function BookShipmentExportStep2({
   const shipment = data?.shipment || {};
   const extra = data?.extra || {};
 
-  /**
-   * ✅ shipment type must come from Step1
-   * DO NOT allow changing here
-   */
   const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
   const nonDocCategory = shipment.nonDocCategory || "COURIER";
   const isDocument = shipmentMainType === "DOCUMENT";
 
-  /** ✅ rates from parent */
   const rates = Array.isArray(data?.rates) ? data.rates : [];
   const selectedRate = data?.selectedRate || null;
 
-  /** ✅ payload slices */
   const units = extra.units || {};
   const exportDetails = extra.exportDetails || {};
   const boxes = extra.boxes || {};
   const goods = extra.goods || {};
 
-  /** ✅ units */
   const weightUnit = units.weightUnit || "KG";
-  const currencyUnit = units.currencyUnit || "INR";
   const dimensionUnit = units.dimensionUnit || "CM";
 
-  /** ✅ shared fields */
   const referenceNumber = exportDetails.referenceNumber || "";
   const exportFormat = exportDetails.exportFormat || "B2B";
 
-  /** ✅ doc fields */
   const docWeight = exportDetails.docWeight ?? "";
   const generalGoodsDescription = exportDetails.generalGoodsDescription || "";
 
-  /** ✅ NON DOC fields */
   const termsOfInvoice = exportDetails.termsOfInvoice || "";
   const invoiceNumber = exportDetails.invoiceNumber || "";
   const invoiceDate = exportDetails.invoiceDate || "";
   const gstInvoice = exportDetails.gstInvoice ?? false;
   const exportReason = exportDetails.exportReason || "";
 
-  /** ✅ category logic */
   const isCommercialOrCSBV =
     String(nonDocCategory || "").toUpperCase() === "COMMERCIAL" ||
     String(nonDocCategory || "").toUpperCase() === "CSBV";
 
-  // ✅ extra fields (Commercial / CSBV only)
   const iecNumber = exportDetails.iecNumber || "";
   const lutIgst = exportDetails.lutIgst || "";
   const lutNumber = exportDetails.lutNumber || "";
@@ -228,45 +164,38 @@ export default function BookShipmentExportStep2({
   const firmType = exportDetails.firmType || "";
   const nfei = exportDetails.nfei ?? false;
 
-  // charges
   const fobValue = exportDetails.fobValue || "";
   const freightCharges = exportDetails.freightCharges || "";
   const insurance = exportDetails.insurance || "";
   const otherCharges = exportDetails.otherCharges || "";
   const otherChargeName = exportDetails.otherChargeName || "";
 
-  /** ✅ boxes meta */
   const boxesCountRaw = boxes.boxesCount ?? "";
   const boxesCount = clampInt(boxesCountRaw || 1, 1, 9999);
 
-  /** ✅ modal tables */
   const boxRows = Array.isArray(boxes.rows) ? boxes.rows : [];
   const goodsRows = Array.isArray(goods.rows) ? goods.rows : [];
 
-  /** UI */
   const [missingFields, setMissingFields] = useState({});
   const [formError, setFormError] = useState("");
 
-  /** ✅ rates states */
   const [showRates, setShowRates] = useState(false);
   const [selectedId, setSelectedId] = useState(selectedRate?.id || "");
   const [expandedId, setExpandedId] = useState("");
 
-  /** ✅ modals */
   const [openDimsModal, setOpenDimsModal] = useState(false);
   const [openGoodsModal, setOpenGoodsModal] = useState(false);
 
   const [dimInvalid, setDimInvalid] = useState({});
   const [goodsInvalid, setGoodsInvalid] = useState({});
 
-  /** patch helpers */
   const patchExtra = (patch) => onChange?.({ extra: { ...extra, ...patch } });
   const patchExportDetails = (patch) =>
     patchExtra({ exportDetails: { ...exportDetails, ...patch } });
   const patchBoxes = (patch) => patchExtra({ boxes: { ...boxes, ...patch } });
   const patchGoods = (patch) => patchExtra({ goods: { ...goods, ...patch } });
 
-  // ✅ Lock page scroll when any modal is open
+  // Lock page scroll when any modal is open
   useEffect(() => {
     const isOpen = openDimsModal || openGoodsModal;
     if (!isOpen) return;
@@ -277,16 +206,15 @@ export default function BookShipmentExportStep2({
     };
   }, [openDimsModal, openGoodsModal]);
 
-  /** ✅ Ensure non-doc starts with 1 box by default */
+  // Ensure non-doc starts with 1 box by default
   useEffect(() => {
     if (isDocument) return;
     if (!boxes.boxesCount || Number(boxes.boxesCount) < 1) {
       patchBoxes({ boxesCount: "1" });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDocument]);
 
-  /** ✅ cleanup when flow changes (based on Step1 type) */
+  // Cleanup when flow changes (based on Step1 type)
   useEffect(() => {
     setMissingFields({});
     setFormError("");
@@ -298,23 +226,9 @@ export default function BookShipmentExportStep2({
       patchBoxes({ boxesCount: "", rows: [], totalWeight: 0 });
       patchGoods({ rows: [] });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipmentMainType]);
 
-  /** ✅ Sync rows for Non-doc */
-  useEffect(() => {
-    if (isDocument) return;
-
-    const nextDims = ensureDimRows(boxesCount, boxRows);
-    if (nextDims.length !== boxRows.length) patchBoxes({ rows: nextDims });
-
-    const nextGoods = ensureGoodsRows(boxesCount, goodsRows);
-    if (nextGoods.length !== goodsRows.length) patchGoods({ rows: nextGoods });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boxesCount, isDocument]);
-
-  /** ✅ auto compute goods amount (non-doc only) */
+  // Auto compute goods amount (non-doc only)
   useEffect(() => {
     if (isDocument) return;
 
@@ -330,11 +244,8 @@ export default function BookShipmentExportStep2({
     );
 
     if (changed) patchGoods({ rows: next });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goodsRows, isDocument]);
 
-  /** ✅ selected rate */
   const pickedRate = useMemo(() => {
     return rates.find((r) => r.id === selectedId) || null;
   }, [rates, selectedId]);
@@ -351,25 +262,6 @@ export default function BookShipmentExportStep2({
     setExpandedId((prev) => (prev === rateId ? "" : rateId));
   };
 
-  /** ✅ derived: total weight */
-  const totalWeightBoxes = useMemo(() => {
-    return boxRows.reduce((sum, r) => {
-      const qty = safeNum(r.qty);
-      const wt = safeNum(r.weight);
-      return sum + qty * wt;
-    }, 0);
-  }, [boxRows]);
-
-  /** ✅ update totalWeight in payload */
-  useEffect(() => {
-    if (isDocument) return;
-    patchBoxes({ totalWeight: Number(totalWeightBoxes.toFixed(2)) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalWeightBoxes, isDocument]);
-
-  /** ===========================
-   * ✅ Validation
-   * =========================== */
   const validateDocumentDetails = () => {
     const missing = {};
     if (!exportFormat) missing.exportFormat = true;
@@ -396,7 +288,6 @@ export default function BookShipmentExportStep2({
       if (safeNum(r.breadth) <= 0) rowBad.breadth = true;
       if (safeNum(r.height) <= 0) rowBad.height = true;
       if (safeNum(r.qty) <= 0) rowBad.qty = true;
-
       if (Object.keys(rowBad).length) bad[idx] = rowBad;
     });
     setDimInvalid(bad);
@@ -411,7 +302,6 @@ export default function BookShipmentExportStep2({
       if (!String(r.hsnCode || "").trim()) rowBad.hsnCode = true;
       if (safeNum(r.qty) <= 0) rowBad.qty = true;
       if (safeNum(r.rate) < 0) rowBad.rate = true;
-
       if (Object.keys(rowBad).length) bad[idx] = rowBad;
     });
     setGoodsInvalid(bad);
@@ -431,21 +321,17 @@ export default function BookShipmentExportStep2({
     if (isCommercialOrCSBV) {
       if (!iecNumber) missing.iecNumber = true;
       if (!lutIgst) missing.lutIgst = true;
-
       if (lutIgst === "LUT") {
         if (!lutNumber) missing.lutNumber = true;
         if (!lutIssueDate) missing.lutIssueDate = true;
       }
-
       if (lutIgst === "IGST") {
         if (!totalIgst) missing.totalIgst = true;
       }
-
       if (!bankAccNumber) missing.bankAccNumber = true;
       if (!bankIFSC) missing.bankIFSC = true;
       if (!bankADCode) missing.bankADCode = true;
       if (!firmType) missing.firmType = true;
-
       if (!fobValue) missing.fobValue = true;
       if (!freightCharges) missing.freightCharges = true;
       if (!insurance) missing.insurance = true;
@@ -458,26 +344,19 @@ export default function BookShipmentExportStep2({
       setFormError("Please fill the highlighted fields");
       return false;
     }
-
     const okDims = validateDimsRows();
     const okGoods = validateGoodsRows();
-
     if (!okDims || !okGoods) {
       setFormError("Please fill all required fields inside the modals");
       return false;
     }
-
     setFormError("");
     return true;
   };
 
-  /** ===========================
-   * ✅ Actions
-   * =========================== */
   const handleCheckRates = () => {
     const ok = isDocument ? validateDocumentDetails() : validateNonDocDetails();
     if (!ok) return;
-
     setShowRates(true);
     onNext?.({ action: "CHECK_RATES" });
   };
@@ -492,9 +371,45 @@ export default function BookShipmentExportStep2({
     onNext?.({ action: "NEXT" });
   };
 
-  /** ===========================
-   * ✅ MODAL: Weight & Dimensions
-   * =========================== */
+  const totalActualWeight = useMemo(() => {
+    return boxRows.reduce(
+      (sum, r) => sum + safeNum(r.qty) * safeNum(r.weight),
+      0,
+    );
+  }, [boxRows]);
+
+  const totalVolumetricWeight = useMemo(() => {
+    return boxRows.reduce((sum, r) => {
+      const vol =
+        (safeNum(r.length) * safeNum(r.breadth) * safeNum(r.height)) / 5000;
+      return sum + safeNum(r.qty) * vol;
+    }, 0);
+  }, [boxRows]);
+
+  const chargeableWeight = useMemo(() => {
+    return Math.max(totalActualWeight, totalVolumetricWeight);
+  }, [totalActualWeight, totalVolumetricWeight]);
+
+  useEffect(() => {
+    if (isDocument) return;
+    patchBoxes({
+      totalWeight: Number(chargeableWeight.toFixed(2)),
+      actualWeight: Number(totalActualWeight.toFixed(2)),
+      volumetricWeight: Number(totalVolumetricWeight.toFixed(2)),
+    });
+  }, [chargeableWeight, isDocument]);
+
+  const updateDimQty = (rowIndex, nextQtyRaw) => {
+    patchBoxes({
+      rows: normalizeRowsToBoxes(
+        boxRows.map((r, i) =>
+          i === rowIndex ? { ...r, qty: clampInt(nextQtyRaw, 1, 999999) } : r,
+        ),
+        boxesCount,
+      ),
+    });
+  };
+
   const updateDimRow = (idx, patch) => {
     const next = [...boxRows];
     if (!next[idx]) return;
@@ -502,18 +417,9 @@ export default function BookShipmentExportStep2({
     patchBoxes({ rows: next });
   };
 
-  const updateDimQtyWithRebalance = (idx, nextQty) => {
-    const nextRows = rebalanceDimRowsByQty(boxesCount, boxRows, idx, nextQty);
-    patchBoxes({ rows: nextRows });
-  };
-
-  /** ===========================
-   * ✅ MODAL: Shipment Content
-   * =========================== */
   const addGoodsRowBelow = (idx) => {
     const row = goodsRows[idx];
     const boxNo = Number(row?.boxNo || 1);
-
     const next = [...goodsRows];
     next.splice(idx + 1, 0, makeGoodsRow(boxNo));
     patchGoods({ rows: next });
@@ -529,10 +435,8 @@ export default function BookShipmentExportStep2({
   const removeGoodsRow = (idx) => {
     const row = goodsRows[idx];
     const boxNo = Number(row?.boxNo || 1);
-
     const remaining = goodsRows.filter((_, i) => i !== idx);
     const stillHas = remaining.some((r) => Number(r.boxNo || 1) === boxNo);
-
     if (!stillHas) return;
     patchGoods({ rows: remaining });
   };
@@ -543,8 +447,6 @@ export default function BookShipmentExportStep2({
         <h3 className="text-base font-extrabold text-black tracking-wide">
           Export Shipment Details
         </h3>
-
-        {/* ✅ info banner (type selected in step1) */}
         <div className="mt-2 rounded-md border border-black/10 bg-gray-50 px-4 py-3 text-xs font-extrabold text-gray-700">
           Shipment Type selected:{" "}
           <span className="text-black">
@@ -555,7 +457,6 @@ export default function BookShipmentExportStep2({
         </div>
       </div>
 
-      {/* ✅ Document Flow */}
       {isDocument ? (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -649,8 +550,10 @@ export default function BookShipmentExportStep2({
               <button
                 type="button"
                 onClick={handleCheckRates}
-                className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900"
+                disabled={isLoadingRates}
+                className="flex items-center gap-2 rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900 disabled:opacity-70"
               >
+                {isLoadingRates && <Loader2 className="h-4 w-4 animate-spin" />}
                 Check Rates
               </button>
             </div>
@@ -659,6 +562,7 @@ export default function BookShipmentExportStep2({
           {showRates ? (
             <RatesUI
               rates={rates}
+              isLoading={isLoadingRates}
               selectedId={selectedId}
               expandedId={expandedId}
               onCardClick={handleCardClick}
@@ -673,7 +577,6 @@ export default function BookShipmentExportStep2({
         </>
       ) : (
         <>
-          {/* ✅ Non Document */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field
               label="REFERENCE NO. (OPTIONAL)"
@@ -689,7 +592,6 @@ export default function BookShipmentExportStep2({
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
               />
             </Field>
-
             <Field
               label="EXPORT FORMAT"
               required
@@ -802,7 +704,6 @@ export default function BookShipmentExportStep2({
             </Field>
           </div>
 
-          {/* ✅ EXTRA FIELDS for COMMERCIAL / CSBV (FIXED + WORKING) */}
           {isCommercialOrCSBV ? (
             <>
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -1131,7 +1032,7 @@ export default function BookShipmentExportStep2({
                 value={boxesCount}
                 onChange={(e) =>
                   patchBoxes({
-                    boxesCount: String(clampInt(e.target.value, 1, 9999)),
+                    boxesCount: clampInt(e.target.value, 1, 9999),
                   })
                 }
                 className="h-11 w-full px-4 text-sm text-gray-800 outline-none"
@@ -1139,14 +1040,14 @@ export default function BookShipmentExportStep2({
             </Field>
 
             <Field
-              label={`TOTAL ACTUAL WEIGHT (${weightUnit})`}
+              label={`TOTAL CHARGEABLE WEIGHT (${weightUnit})`}
               required={false}
               invalid={false}
               icon={<Scale className="h-4 w-4 text-[#6b7280]" />}
             >
               <input
                 readOnly
-                value={Number(totalWeightBoxes || 0).toFixed(2)}
+                value={Number(chargeableWeight || 0).toFixed(2)}
                 className="h-11 w-full cursor-not-allowed bg-gray-50 px-4 text-sm font-extrabold text-gray-900 outline-none"
               />
             </Field>
@@ -1180,12 +1081,14 @@ export default function BookShipmentExportStep2({
             </Field>
           </div>
 
-          {/* ✅ modals buttons */}
+          {/* Buttons for Modals */}
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => {
-                patchBoxes({ rows: ensureDimRows(boxesCount, boxRows) });
+                patchBoxes({
+                  rows: normalizeRowsToBoxes(boxRows, boxesCount),
+                });
                 setOpenDimsModal(true);
               }}
               className="rounded-md border border-black/10 bg-white px-6 py-4 text-sm font-extrabold text-gray-900 shadow-sm hover:bg-gray-50"
@@ -1237,8 +1140,10 @@ export default function BookShipmentExportStep2({
               <button
                 type="button"
                 onClick={handleCheckRates}
-                className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900"
+                disabled={isLoadingRates}
+                className="flex items-center gap-2 rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900 disabled:opacity-70"
               >
+                {isLoadingRates && <Loader2 className="h-4 w-4 animate-spin" />}
                 Check Rates
               </button>
             </div>
@@ -1247,6 +1152,7 @@ export default function BookShipmentExportStep2({
           {showRates ? (
             <RatesUI
               rates={rates}
+              isLoading={isLoadingRates}
               selectedId={selectedId}
               expandedId={expandedId}
               onCardClick={handleCardClick}
@@ -1259,7 +1165,7 @@ export default function BookShipmentExportStep2({
 
           {formError ? <ErrorText text={formError} /> : null}
 
-          {/* ✅ MODALS */}
+          {/* Modals for Dims and Goods */}
           {openDimsModal ? (
             <Modal
               title="Weight & Dimensions"
@@ -1289,15 +1195,25 @@ export default function BookShipmentExportStep2({
                         H ({dimensionUnit})
                       </th>
                       <th className="px-2 py-3 text-right bg-gray-100 text-gray-800">
-                        Total Actual Wt.
+                        Total Chargeable Wt.
                       </th>
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-gray-100">
                     {boxRows.map((r, idx) => {
-                      const rowTotalWeight = (
-                        safeNum(r.qty) * safeNum(r.weight)
+                      const actual = safeNum(r.qty) * safeNum(r.weight);
+
+                      const volumetric =
+                        safeNum(r.qty) *
+                        ((safeNum(r.length) *
+                          safeNum(r.breadth) *
+                          safeNum(r.height)) /
+                          5000);
+
+                      const rowChargeableWeight = Math.max(
+                        actual,
+                        volumetric,
                       ).toFixed(2);
 
                       const err = dimInvalid[idx] || {};
@@ -1321,17 +1237,9 @@ export default function BookShipmentExportStep2({
                               min={1}
                               value={r.qty}
                               onChange={(e) =>
-                                updateDimQtyWithRebalance(
-                                  idx,
-                                  clampInt(e.target.value, 1, 999999),
-                                )
+                                updateDimQty(idx, e.target.value)
                               }
-                              className={[
-                                "h-9 w-16 rounded border px-2 font-bold text-center outline-none",
-                                err.qty
-                                  ? "border-red-400 focus:border-red-600"
-                                  : "border-gray-300 focus:border-black",
-                              ].join(" ")}
+                              className="h-9 w-16 rounded border px-2 font-bold text-center"
                             />
                           </td>
 
@@ -1384,7 +1292,7 @@ export default function BookShipmentExportStep2({
                           </td>
 
                           <td className="px-2 py-2 text-right bg-gray-50 font-extrabold">
-                            {rowTotalWeight}
+                            {rowChargeableWeight}
                           </td>
                         </tr>
                       );
@@ -1572,9 +1480,10 @@ export default function BookShipmentExportStep2({
   );
 }
 
-/** ✅ Rates UI */
+/** * ✅ Rates UI - Enhanced Table Layout */
 function RatesUI({
   rates,
+  isLoading,
   selectedId,
   expandedId,
   onCardClick,
@@ -1583,133 +1492,170 @@ function RatesUI({
   onNext,
   setShowRates,
 }) {
+  if (isLoading) {
+    return (
+      <div className="mt-6 flex flex-col items-center justify-center rounded-md border border-black/10 bg-white py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <p className="mt-4 text-sm font-bold text-gray-600">
+          Fetching best rates from vendors...
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="mt-6">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="mt-8">
+      <div className="mb-4 flex items-center justify-between">
         <div className="text-sm font-extrabold text-black">
-          Select Vendor Price
+          Select Vendor Rate
         </div>
         <button
           type="button"
           onClick={() => setShowRates(false)}
-          className="text-xs font-extrabold text-gray-700 hover:underline"
+          className="text-xs font-extrabold text-blue-600 hover:underline"
         >
-          Change Details
+          Modify Details
         </button>
       </div>
 
       {rates.length === 0 ? (
-        <div className="rounded-md border border-black/10 bg-white p-5 text-sm font-extrabold text-gray-700">
-          No vendor rates available.
+        <div className="rounded-md border border-black/10 bg-white p-6 text-center text-sm font-extrabold text-gray-700">
+          No rates found for this shipment criteria.
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {rates.map((rate) => {
-            const isSelected = rate.id === selectedId;
-            const isExpanded = rate.id === expandedId;
+        <div className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
+              <tr>
+                <th className="px-6 py-4 text-left">Vendor</th>
+                <th className="px-6 py-4 text-center">TAT</th>
+                <th className="px-6 py-4 text-center">Weight</th>
+                <th className="px-6 py-4 text-right">Total Price</th>
+                <th className="px-6 py-4 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rates.map((rate) => {
+                const isSelected = rate.id === selectedId;
+                const isExpanded = rate.id === expandedId;
 
-            return (
-              <div
-                key={rate.id}
-                onClick={() => onCardClick(rate)}
-                className={[
-                  "cursor-pointer rounded-md border bg-white p-4 shadow-sm transition",
-                  isSelected
-                    ? "border-black ring-2 ring-black/20"
-                    : "border-black/10 hover:border-black/30",
-                ].join(" ")}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-extrabold tracking-wide text-black">
-                      {rate.vendorCode || "VENDOR"}
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-bold text-gray-600">
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        TAT: {rate.tat || "-"}
-                      </span>
-
-                      <span className="inline-flex items-center gap-1">
-                        <Weight className="h-4 w-4" />
-                        Chargeable Wt:{" "}
-                        <span className="font-extrabold text-gray-900">
-                          {rate.chargeableWeight ?? "-"}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {isSelected ? (
-                    <div className="inline-flex items-center gap-2 rounded-md bg-black px-3 py-2 text-xs font-extrabold text-white">
-                      <PackageCheck className="h-4 w-4" />
-                      Selected
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="mt-4 flex items-end justify-between">
-                  <div className="text-xs font-bold text-gray-500">
-                    Total Price
-                  </div>
-
-                  <div className="flex items-center gap-1 text-lg font-extrabold text-black">
-                    <IndianRupee className="h-5 w-5" />
-                    {Number(rate.price || 0).toFixed(2)}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleBreakup(rate.id);
-                  }}
-                  className="mt-4 inline-flex items-center gap-2 text-xs font-bold hover:underline"
-                >
-                  Price Breakup{" "}
-                  {isExpanded ? (
-                    <ChevronUp className="h-4 w-4" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4" />
-                  )}
-                </button>
-
-                {isExpanded ? (
-                  <div className="mt-3 rounded-md border border-black/10 bg-gray-50 p-3">
-                    {Array.isArray(rate.breakup) && rate.breakup.length > 0 ? (
-                      <div className="space-y-2">
-                        {rate.breakup.map((b, i) => (
+                return (
+                  <React.Fragment key={rate.id}>
+                    {/* Main Row */}
+                    <tr
+                      onClick={() => onCardClick(rate)}
+                      className={[
+                        "cursor-pointer transition-colors duration-150",
+                        isSelected ? "bg-blue-50/50" : "hover:bg-gray-50",
+                      ].join(" ")}
+                    >
+                      {/* Vendor Cell */}
+                      <td className="px-6 py-5 align-middle">
+                        <div className="flex items-center gap-4">
+                          {/* Radio Indicator */}
                           <div
-                            key={i}
-                            className="flex items-center justify-between text-xs font-bold text-gray-700"
+                            className={[
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all",
+                              isSelected
+                                ? "border-black bg-black"
+                                : "border-gray-300 bg-white",
+                            ].join(" ")}
                           >
-                            <span>{b.label}</span>
-                            <span className="font-extrabold text-gray-900">
-                              ₹{Number(b.amount || 0).toFixed(2)}
-                            </span>
+                            {isSelected && (
+                              <div className="h-2 w-2 rounded-full bg-white" />
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs font-bold text-gray-600">
-                        No breakup available.
-                      </div>
+                          <span className="font-extrabold text-gray-900 text-base">
+                            {rate.vendorCode || "Unknown Vendor"}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* TAT */}
+                      <td className="px-6 py-5 text-center align-middle font-bold text-gray-600">
+                        {rate.tat || "-"}
+                      </td>
+
+                      {/* Weight */}
+                      <td className="px-6 py-5 text-center align-middle font-bold text-gray-600">
+                        {rate.chargeableWeight} {rate.weightUnit || "KG"}
+                      </td>
+
+                      {/* Price */}
+                      <td className="px-6 py-5 text-right align-middle">
+                        <div className="inline-flex items-center text-lg font-extrabold text-black">
+                          <IndianRupee className="h-4 w-4 mr-1" />
+                          {Number(rate.price || 0).toFixed(2)}
+                        </div>
+                      </td>
+
+                      {/* Toggle Button */}
+                      <td className="px-6 py-5 text-center align-middle">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleBreakup(rate.id);
+                          }}
+                          className="rounded-full p-2 text-gray-500 hover:bg-gray-200 transition"
+                          title="View Price Breakup"
+                        >
+                          {isExpanded ? (
+                            <ChevronUp className="h-5 w-5" />
+                          ) : (
+                            <ChevronDown className="h-5 w-5" />
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+
+                    {/* Expandable Breakup Row */}
+                    {isExpanded && (
+                      <tr className="bg-gray-50/60 shadow-inner">
+                        <td colSpan={5} className="px-8 py-4">
+                          <div className="rounded-md border border-black/5 bg-white p-5">
+                            <h4 className="mb-3 text-xs font-extrabold uppercase tracking-widest text-gray-400">
+                              Price Breakup
+                            </h4>
+                            {Array.isArray(rate.breakup) &&
+                            rate.breakup.length > 0 ? (
+                              <div className="flex flex-col space-y-2">
+                                {rate.breakup.map((b, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex items-center justify-between border-b border-gray-100 pb-1 last:border-0 last:pb-0"
+                                  >
+                                    <span className="text-xs font-bold text-gray-600">
+                                      {b.label}
+                                    </span>
+                                    <span className="text-xs font-extrabold text-gray-900">
+                                      ₹{Number(b.amount || 0).toFixed(2)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs italic text-gray-500">
+                                No detailed breakup provided by vendor.
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <div className="mt-7 flex items-center justify-between gap-3">
+      <div className="mt-8 flex items-center justify-between gap-4">
         <button
           type="button"
           onClick={onBack}
-          className="rounded-md border border-gray-200 bg-gray-50 px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-100"
+          className="rounded-md border border-gray-200 bg-white px-6 py-3 text-sm font-extrabold text-gray-700 hover:bg-gray-50 transition"
         >
           Back
         </button>
@@ -1717,7 +1663,7 @@ function RatesUI({
         <button
           type="button"
           onClick={onNext}
-          className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md hover:bg-gray-900"
+          className="rounded-md bg-black px-8 py-3 text-sm font-extrabold text-white shadow-lg hover:bg-gray-800 transition transform active:scale-95"
         >
           Next
         </button>
@@ -1738,28 +1684,23 @@ function Modal({ title, onClose, children }) {
 
   return (
     <div
-      className="fixed inset-0 z-[999] bg-black/50 p-4"
+      className="fixed inset-0 z-[999] bg-black/50 p-4 flex items-center justify-center"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
-      <div className="mx-auto flex h-full max-w-6xl items-center">
-        <div className="w-full overflow-hidden rounded-xl bg-white shadow-xl">
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
-            <div className="text-sm font-extrabold text-black">{title}</div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="grid h-9 w-9 place-items-center rounded-md border border-black/10 hover:bg-gray-50"
-            >
-              <X className="h-4 w-4 text-gray-700" />
-            </button>
-          </div>
-
-          <div className="max-h-[calc(100vh-150px)] overflow-y-auto p-6">
-            {children}
-          </div>
+      <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between border-b bg-white px-6 py-4 shrink-0">
+          <div className="text-base font-extrabold text-black">{title}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 hover:bg-gray-100"
+          >
+            <X className="h-5 w-5 text-gray-600" />
+          </button>
         </div>
+        <div className="overflow-y-auto p-6 grow">{children}</div>
       </div>
     </div>
   );
@@ -1773,14 +1714,12 @@ function ErrorText({ text }) {
   );
 }
 
-/* ✅ Field */
 function Field({ label, required, icon, invalid, children }) {
   return (
     <div>
       <label className="block text-sm font-bold tracking-wide text-[#111827]">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-
       <div
         className={[
           "mt-2 flex items-center overflow-hidden rounded-md bg-white shadow-sm",
@@ -1797,7 +1736,6 @@ function Field({ label, required, icon, invalid, children }) {
         >
           {icon}
         </div>
-
         {children}
       </div>
     </div>

@@ -1,15 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import BookShipmentExportStep1 from "./BookShipmentExportStep1";
 import BookShipmentExportStep2 from "./BookShipmentExportStep2";
 import BookShipmentExportStep3 from "./BookShipmentExportStep3";
-import BookShipmentExportStep4 from "./BookShipmentExportStep4";
 
 import {
   calcActualWeightFromBoxes,
   calcVolumetricWeight,
   calcChargeableWeight,
-  generateVendorRates,
 } from "../utils/rateEngine";
 
 /** ✅ final backend payload optimizer (EXPORT) */
@@ -33,8 +32,8 @@ function buildExportBookingPayload(data) {
     fileSize: d.file?.size || 0,
   }));
 
-  const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT"; // DOCUMENT | NON_DOCUMENT
-  const nonDocCategory = shipment.nonDocCategory || ""; // COURIER_SAMPLE / AMAZON_FBA / ECOMMERCE / etc.
+  const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
+  const nonDocCategory = shipment.nonDocCategory || "";
 
   // ✅ weights calculation
   const isDocument = shipmentMainType === "DOCUMENT";
@@ -60,51 +59,34 @@ function buildExportBookingPayload(data) {
     shipment: {
       shipmentMainType,
       nonDocCategory,
-
       originCountry: shipment.originCountry || "INDIA",
       destinationCountry: shipment.destinationCountry || "",
       destinationCountryId: shipment.destinationCountryId || "",
-
       originPincode: shipment.originPincode || "",
       originCity: shipment.originCity || "",
       originState: shipment.originState || "",
-
       destinationZip: shipment.destZip || "",
       destinationCity: shipment.destCity || "",
       destinationState: shipment.destState || "",
     },
-
     units: {
       weightUnit: units.weightUnit || "KG",
       currencyUnit: units.currencyUnit || "INR",
       dimensionUnit: units.dimensionUnit || "CM",
     },
-
-    exportDetails: {
-      ...exportDetails,
-    },
-
-    boxes: {
-      ...boxes,
-    },
-
-    goods: {
-      ...goods,
-    },
-
+    exportDetails: { ...exportDetails },
+    boxes: { ...boxes },
+    goods: { ...goods },
     weights: {
       actualWeight: Number(actualWeight.toFixed(2)),
       volumetricWeight: Number(volumetricWeight.toFixed(2)),
       chargeableWeight: Number(chargeableWeight.toFixed(2)),
     },
-
     addresses: {
       sender: addresses.sender || {},
       receiver: addresses.receiver || {},
     },
-
     documents: docsMeta,
-
     selectedVendor: selectedRate
       ? {
           id: selectedRate.id,
@@ -113,6 +95,7 @@ function buildExportBookingPayload(data) {
           chargeableWeight: selectedRate.chargeableWeight,
           totalPrice: selectedRate.price,
           breakup: selectedRate.breakup || [],
+          ...selectedRate.raw, // Pass full raw object for backend
         }
       : null,
   };
@@ -120,22 +103,56 @@ function buildExportBookingPayload(data) {
   return payload;
 }
 
-/** ✅ create FormData (JSON + files) */
-function buildExportFormData(data) {
-  const payload = buildExportBookingPayload(data);
+/** ✅ Create Booking API */
+async function bookShipmentAPI(payload) {
+  try {
+    // Assuming this endpoint based on your previous 'rate-calculator' path
+    const url = `/api/proxy/booking/create`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  const fd = new FormData();
-  fd.append("payload", JSON.stringify(payload));
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.error("Booking failed", error);
+    throw error;
+  }
+}
 
-  const docs = Array.isArray(data?.addresses?.documents)
-    ? data.addresses.documents
-    : [];
+/** ✅ Fetch Rates API */
+async function fetchRatesAPI(params) {
+  try {
+    const res = await fetch(`/api/proxy/booking/rate-calculator`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_name: "sgate",
+        password: "123456",
+        booking_type: 1, // Export
+        origin_pincode: params.originPincode,
+        destination_pincode: params.destZip,
+        destination_country: params.destinationCountry,
+        shipment_type: params.isDocument ? 2 : 1,
+        weight: params.chargeableWeight,
+        quantity: params.boxesCount,
+        length: params.length,
+        width: params.width,
+        height: params.height,
+      }),
+    });
 
-  docs.forEach((d, idx) => {
-    if (d?.file) fd.append(`documents[${idx}]`, d.file);
-  });
-
-  return { payload, formData: fd };
+    const json = await res.json();
+    if (json.statusCode === 200 && Array.isArray(json.data)) {
+      return json.data;
+    }
+    return [];
+  } catch (error) {
+    console.error("Rate fetch failed", error);
+    return [];
+  }
 }
 
 export default function BookShipmentExport({
@@ -146,9 +163,11 @@ export default function BookShipmentExport({
   onBack,
 }) {
   const [rates, setRates] = useState([]);
+  const [loadingRates, setLoadingRates] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
 
-  /** ✅ Parent computes rates on demand (Step2 Check Rates) */
-  const computeRates = () => {
+  /** ✅ Parent computes rates on demand */
+  const computeRates = async () => {
     const shipment = data?.shipment || {};
     const extra = data?.extra || {};
     const units = extra?.units || {};
@@ -158,9 +177,7 @@ export default function BookShipmentExport({
     const originPincode = shipment.originPincode || "";
     const destinationCountry = shipment.destinationCountry || "";
     const destZip = shipment.destZip || "";
-    const destCity = shipment.destCity || "";
     const shipmentMainType = shipment.shipmentMainType || "NON_DOCUMENT";
-
     const weightUnit = units.weightUnit || "KG";
     const dimensionUnit = units.dimensionUnit || "CM";
 
@@ -191,41 +208,91 @@ export default function BookShipmentExport({
       chargeableWeight <= 0
     ) {
       setRates([]);
-      return [];
+      return;
     }
 
-    const next = generateVendorRates({
+    const boxesRows = boxes?.rows || [];
+    const maxLen = boxesRows.reduce(
+      (m, r) => Math.max(m, Number(r.length || 0)),
+      0,
+    );
+    const maxWidth = boxesRows.reduce(
+      (m, r) => Math.max(m, Number(r.breadth || 0)),
+      0,
+    );
+    const maxHeight = boxesRows.reduce(
+      (m, r) => Math.max(m, Number(r.height || 0)),
+      0,
+    );
+
+    setLoadingRates(true);
+
+    const apiData = await fetchRatesAPI({
       originPincode,
-      destPincode: destZip,
-      shipmentType: "EXPORT",
-      isCOD: false,
-      chargeableWeight,
+      destZip,
       destinationCountry,
-      destinationCity: destCity,
+      isDocument: shipmentMainType === "DOCUMENT",
+      chargeableWeight,
+      boxesCount: Number(boxes.boxesCount || 1),
+      length: maxLen || 1,
+      width: maxWidth || 1,
+      height: maxHeight || 1,
     });
 
-    setRates(next);
-    return next;
+    const mappedRates = apiData.map((item, idx) => ({
+      id: `RATE_${idx}_${item.product_name}`,
+      vendorCode: item.product_name,
+      tat: item.tat_days ? `${item.tat_days} Days` : "N/A",
+      chargeableWeight: chargeableWeight,
+      price: item.grand_total_with_gst,
+      breakup: (item.charges || []).map((c) => ({
+        label: c.charge_name,
+        amount: c.charge_amount_show,
+      })),
+      raw: item,
+    }));
+
+    setRates(mappedRates);
+    setLoadingRates(false);
   };
 
-  /** ✅ Step2 special handler: check rates / next */
+  /** ✅ Handle Rate Selection & Next */
   const handleStep2Next = (meta) => {
-    // meta = { action: "CHECK_RATES" } or { action: "NEXT" }
     if (meta?.action === "CHECK_RATES") {
       computeRates();
-      return; // ✅ stay on same step
+      return;
     }
     if (meta?.action === "NEXT") {
-      onNext?.(); // ✅ move step 3
+      onNext?.();
       return;
     }
     onNext?.();
   };
 
-  /** ✅ final submit */
-  const finalSubmit = () => {
-    const { payload, formData } = buildExportFormData(data);
-    onNext?.({ payload, formData });
+  /** ✅ Final Submit - Calls Booking API */
+  const finalSubmit = async () => {
+    try {
+      setIsBooking(true);
+      const bookingPayload = buildExportBookingPayload(data);
+
+      // 1. Call Backend to Book
+      const response = await bookShipmentAPI(bookingPayload);
+
+      // 2. Build Form Data for Next Step (e.g. Payment or Success Page)
+      const { formData } = buildExportBookingPayload(data); // Re-using existing logic to get FD if needed elsewhere
+
+      // 3. Pass result up
+      onNext?.({
+        payload: bookingPayload,
+        apiResponse: response,
+        success: response.statusCode === 200,
+      });
+    } catch (e) {
+      console.error("Booking Error", e);
+      // Optional: Handle error UI here or pass error up
+    } finally {
+      setIsBooking(false);
+    }
   };
 
   if (step === 1) {
@@ -242,6 +309,7 @@ export default function BookShipmentExport({
     return (
       <BookShipmentExportStep2
         data={{ ...data, rates }}
+        isLoadingRates={loadingRates}
         onChange={onChange}
         onNext={handleStep2Next}
         onBack={onBack}
@@ -251,23 +319,22 @@ export default function BookShipmentExport({
 
   if (step === 3) {
     return (
-      <BookShipmentExportStep3
-        data={data}
-        onChange={onChange}
-        onNext={onNext}
-        onBack={onBack}
-      />
-    );
-  }
-
-  if (step === 4) {
-    return (
-      <BookShipmentExportStep4
-        data={{ ...data, rates }}
-        onChange={onChange}
-        onNext={finalSubmit}
-        onBack={onBack}
-      />
+      <div className="relative">
+        {isBooking && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm">
+            <Loader2 className="h-10 w-10 animate-spin text-black" />
+            <div className="mt-3 font-extrabold text-black">
+              Creating Shipment...
+            </div>
+          </div>
+        )}
+        <BookShipmentExportStep3
+          data={data}
+          onChange={onChange}
+          onNext={finalSubmit}
+          onBack={onBack}
+        />
+      </div>
     );
   }
 

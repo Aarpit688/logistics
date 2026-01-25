@@ -237,6 +237,14 @@ export default function BookShipmentExportStep3({
     if (!receiverFinal.idType) missing.receiverIdType = true;
     if (!receiverFinal.idNumber) missing.receiverIdNumber = true;
 
+    // Sender Document
+    if (!senderFinal.documentType) missing.senderDocumentType = true;
+    if (!senderFinal.documentNumber) missing.senderDocumentNumber = true;
+
+    // Receiver Document
+    if (!receiverFinal.documentType) missing.receiverDocumentType = true;
+    if (!receiverFinal.documentNumber) missing.receiverDocumentNumber = true;
+
     // Validate first 2 docs
     const d0 = documents[0];
     const d1 = documents[1];
@@ -510,6 +518,51 @@ export default function BookShipmentExportStep3({
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               </div>
             </Field>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                label="DOCUMENT TYPE"
+                required
+                invalid={missingFields.senderDocumentType}
+                icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+              >
+                <div className="relative w-full">
+                  <select
+                    value={sender.documentType || ""}
+                    onChange={(e) =>
+                      patchSender({ documentType: e.target.value })
+                    }
+                    className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
+                  >
+                    <option value="" disabled>
+                      Select
+                    </option>
+                    {DOCUMENT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                </div>
+              </Field>
+
+              <Field
+                label="DOCUMENT NUMBER"
+                required
+                invalid={missingFields.senderDocumentNumber}
+                icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+              >
+                <input
+                  type="text"
+                  value={sender.documentNumber || ""}
+                  onChange={(e) =>
+                    patchSender({ documentNumber: e.target.value })
+                  }
+                  placeholder="Enter document number"
+                  className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+                />
+              </Field>
+            </div>
           </div>
         </div>
 
@@ -685,6 +738,52 @@ export default function BookShipmentExportStep3({
                 />
               </Field>
             </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                label="DOCUMENT TYPE"
+                required
+                invalid={missingFields.receiverDocumentType}
+                icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+              >
+                <div className="relative w-full">
+                  <select
+                    value={receiver.documentType || ""}
+                    onChange={(e) =>
+                      patchReceiver({ documentType: e.target.value })
+                    }
+                    className="h-11 w-full appearance-none bg-transparent px-4 pr-10 text-sm font-extrabold text-[#111827] outline-none"
+                  >
+                    <option value="" disabled>
+                      Select
+                    </option>
+                    {DOCUMENT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                </div>
+              </Field>
+
+              <Field
+                label="DOCUMENT NUMBER"
+                required
+                invalid={missingFields.receiverDocumentNumber}
+                icon={<Hash className="h-4 w-4 text-[#6b7280]" />}
+              >
+                <input
+                  type="text"
+                  value={receiver.documentNumber || ""}
+                  onChange={(e) =>
+                    patchReceiver({ documentNumber: e.target.value })
+                  }
+                  placeholder="Enter document number"
+                  className="h-11 w-full px-4 text-sm text-gray-800 outline-none placeholder:text-[#9ca3af]"
+                />
+              </Field>
+            </div>
+
             <Field
               label="DELIVERY INSTRUCTIONS"
               required={false}
@@ -822,7 +921,7 @@ export default function BookShipmentExportStep3({
           onClick={handleNext}
           className="rounded-md bg-black px-7 py-3 text-sm font-extrabold text-white shadow-md transition hover:bg-gray-900 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-black/20"
         >
-          Next
+          Book Shipment
         </button>
       </div>
 
