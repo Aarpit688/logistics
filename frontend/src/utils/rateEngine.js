@@ -1,15 +1,31 @@
 // rateEngine.js
 
-/** ✅ placeholder volumetric weight calculation (you will give formula later) */
+/** ✅ volumetric weight calculation */
 export function calcVolumetricWeight({
   shipmentType,
   boxesRows = [],
   dimensionUnit = "CM",
   weightUnit = "KG",
 }) {
-  // 🔥 You will provide formula later.
-  // For now return 0 so chargeable weight = actual weight
-  return 0;
+  return (boxesRows || []).reduce((sum, r) => {
+    const qty = Number(r.qty || 0);
+    const l = Number(r.length || 0);
+    const b = Number(r.breadth || 0);
+    const h = Number(r.height || 0);
+
+    if (
+      Number.isNaN(qty) ||
+      Number.isNaN(l) ||
+      Number.isNaN(b) ||
+      Number.isNaN(h)
+    )
+      return sum;
+
+    // 📦 Volumetric weight per box: (L * B * H) / 5000
+    const volPerBox = (l * b * h) / 5000;
+
+    return sum + qty * volPerBox;
+  }, 0);
 }
 
 /** ✅ Actual weight from boxes rows (non-document) */

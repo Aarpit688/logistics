@@ -10,6 +10,7 @@ import {
   calcVolumetricWeight,
   calcChargeableWeight,
 } from "../utils/rateEngine";
+import { API_BASE_URL } from "../config/api";
 
 /** ✅ final backend payload optimizer (EXPORT) */
 function buildExportBookingPayload(data) {
@@ -95,7 +96,7 @@ function buildExportBookingPayload(data) {
           chargeableWeight: selectedRate.chargeableWeight,
           totalPrice: selectedRate.price,
           breakup: selectedRate.breakup || [],
-          ...selectedRate.raw, // Pass full raw object for backend
+          ...selectedRate.raw,
         }
       : null,
   };
@@ -103,15 +104,39 @@ function buildExportBookingPayload(data) {
   return payload;
 }
 
-/** ✅ Create Booking API */
-async function bookShipmentAPI(payload) {
+/** ✅ Helper: Build FormData (JSON + Files) */
+function buildExportFormData(data) {
+  const payload = buildExportBookingPayload(data);
+  const fd = new FormData();
+
+  // Append the JSON data as a string (Backend expects req.body.payload)
+  fd.append("payload", JSON.stringify(payload));
+
+  // Append actual files
+  const docs = Array.isArray(data?.addresses?.documents)
+    ? data.addresses.documents
+    : [];
+
+  docs.forEach((d, idx) => {
+    if (d?.file) {
+      fd.append(`documents[${idx}]`, d.file);
+    }
+  });
+
+  return { payload, formData: fd };
+}
+
+/** ✅ Create Booking API - Updated for FormData */
+async function bookShipmentAPI(formData) {
+  const token = localStorage.getItem("token");
   try {
-    // Assuming this endpoint based on your previous 'rate-calculator' path
-    const url = `/api/proxy/booking/create`;
-    const res = await fetch(url, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/create`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // ❌ NO Content-Type header here; browser sets multipart boundary automatically
+      },
+      body: formData, // Send FormData object
     });
 
     const json = await res.json();
@@ -269,27 +294,26 @@ export default function BookShipmentExport({
     onNext?.();
   };
 
-  /** ✅ Final Submit - Calls Booking API */
+  /** ✅ Final Submit - Updated to use FormData */
   const finalSubmit = async () => {
     try {
       setIsBooking(true);
-      const bookingPayload = buildExportBookingPayload(data);
 
-      // 1. Call Backend to Book
-      const response = await bookShipmentAPI(bookingPayload);
+      // 1. Build FormData (JSON string + Files)
+      const { formData, payload } = buildExportFormData(data);
 
-      // 2. Build Form Data for Next Step (e.g. Payment or Success Page)
-      const { formData } = buildExportBookingPayload(data); // Re-using existing logic to get FD if needed elsewhere
+      // 2. Call Backend
+      const response = await bookShipmentAPI(formData);
 
       // 3. Pass result up
       onNext?.({
-        payload: bookingPayload,
+        payload: payload,
         apiResponse: response,
         success: response.statusCode === 200,
       });
     } catch (e) {
       console.error("Booking Error", e);
-      // Optional: Handle error UI here or pass error up
+      alert("Booking Failed. Check console.");
     } finally {
       setIsBooking(false);
     }

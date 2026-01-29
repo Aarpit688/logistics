@@ -14,10 +14,17 @@ import {
 
 import { registerMsme, getMyMsmes } from "../controllers/msmeController.js";
 
-import { uploadDocuments } from "../middlewares/uploadMiddleware.js";
+import {
+  uploadBookingDocs,
+  uploadDocuments,
+} from "../middlewares/uploadMiddleware.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { getFinalFuel } from "../controllers/fuelSurchargeController.js";
 import { createSpotPricingEnquiry } from "../controllers/spotPricingController.js";
+import {
+  createBooking,
+  getUserBookings,
+} from "../controllers/bookingController.js";
 
 const router = express.Router();
 
@@ -57,5 +64,8 @@ router.get("/msme", protect, getMyMsmes);
 router.get("/get-fuel-surcharge", protect, getFinalFuel);
 
 router.post("/spot-pricing/enquiry", createSpotPricingEnquiry);
+
+router.post("/create", protect, uploadBookingDocs, createBooking);
+router.post("/shipment-list", protect, getUserBookings);
 
 export default router;

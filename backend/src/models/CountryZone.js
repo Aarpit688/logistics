@@ -13,9 +13,7 @@ const CountryZoneSchema = new mongoose.Schema(
       self: { type: String, default: null },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
-
-CountryZoneSchema.index({ country: 1 });
 
 export default mongoose.model("CountryZone", CountryZoneSchema);

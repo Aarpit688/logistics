@@ -14,6 +14,9 @@ import {
   getAllSpotPricingEnquiries,
   getSpotPricingEnquiryById,
   updateSpotPricingAdminQuote,
+  getAllBookings,
+  getBookingById,
+  updateBookingStatus,
 } from "../controllers/adminController.js";
 
 import {
@@ -86,5 +89,9 @@ router.get("/spot-pricing/:id", adminAuth, getSpotPricingEnquiryById);
 
 // ✅ Quote update route
 router.patch("/spot-pricing/:id/quote", adminAuth, updateSpotPricingAdminQuote);
+
+router.get("/all-bookings", adminAuth, getAllBookings);
+router.get("/booking/:id", adminAuth, getBookingById);
+router.patch("/booking/:id/status", adminAuth, updateBookingStatus);
 
 export default router;

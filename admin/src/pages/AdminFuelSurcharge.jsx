@@ -22,7 +22,7 @@ const AdminFuelSurcharge = () => {
   /* ---------------- FETCH ---------------- */
   const fetchFuel = async () => {
     setLoading(true);
-    const res = await fetch(API_BASE_URL, {
+    const res = await fetch(`${API_BASE_URL}/api/admin/fuel-surcharge`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 

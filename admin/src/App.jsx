@@ -9,6 +9,7 @@ import AdminLayout from "./components/AdminLayout";
 import AdminFuelSurcharge from "./pages/AdminFuelSurcharge";
 import AdminMSME from "./pages/AdminMSME";
 import AdminCountryZone from "./pages/AdminCountryZone";
+import AdminBookingList from "./pages/AdminBookingList";
 
 const App = () => {
   return (
@@ -31,6 +32,14 @@ const App = () => {
           <Route path="fuel-surcharge" element={<AdminFuelSurcharge />} />
           <Route path="country-zones" element={<AdminCountryZone />} />
           <Route path="settings" element={<div>Admin Settings Page</div>} />
+          <Route
+            path="booking"
+            element={
+              <div>
+                <AdminBookingList />
+              </div>
+            }
+          />
         </Route>
       </Routes>
     </Router>

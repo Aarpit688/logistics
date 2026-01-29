@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Msme from "../models/Msme.js";
 import { generateAccountCode } from "../utils/accountCode.js";
 import SpotPricing from "../models/SpotPricing.js";
+import Booking from "../models/Booking.js";
 
 /* ===========================
    ADMIN AUTH
@@ -305,5 +306,52 @@ export const updateSpotPricingAdminQuote = async (req, res) => {
       message: "Failed to update quote",
       error: error.message,
     });
+  }
+};
+
+export const getAllBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find()
+      // 👇 THIS LINE IS CRITICAL: It swaps the 'user' ID for the actual User document
+      .populate("user", "name email mobile companyName")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      data: bookings,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get Single Booking (Detailed View)
+export const getBookingById = async (req, res) => {
+  try {
+    const booking = await Booking.findOne({ bookingId: req.params.id });
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
+    res.status(200).json({ success: true, data: booking });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update Status (e.g., Mark as Approved)
+export const updateBookingStatus = async (req, res) => {
+  try {
+    const { status } = req.body; // { status: "APPROVED" }
+    const booking = await Booking.findOneAndUpdate(
+      { bookingId: req.params.id },
+      { status },
+      { new: true },
+    );
+    res.status(200).json({ success: true, data: booking });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

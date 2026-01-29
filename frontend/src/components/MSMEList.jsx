@@ -208,7 +208,7 @@ const MSMEList = () => {
                       className="text-gray-800 hover:bg-gray-50 transition"
                     >
                       {/* Sticky SR.NO */}
-                      <td className="border px-3 sm:px-4 py-3 text-center font-bold sticky left-0 bg-white z-[1]">
+                      <td className="border px-3 sm:px-4 py-3 text-center font-bold left-0 bg-white z-[1]">
                         {row.sr}.
                       </td>
 

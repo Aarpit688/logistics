@@ -22,6 +22,11 @@ const AdminSidebar = () => {
           Dashboard
         </NavLink>
 
+        <NavLink to="/admin/booking" className={linkClass}>
+          <LayoutDashboard className="w-5 h-5" />
+          Booking
+        </NavLink>
+
         <NavLink to="/admin/fuel-surcharge" className={linkClass}>
           <Users className="w-5 h-5" />
           Fuel Surcharge

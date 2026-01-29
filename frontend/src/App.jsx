@@ -14,6 +14,9 @@ import AuthRoute from "./routes/AuthRoute";
 import RateCalculator from "./pages/RateCalculator";
 import SpotPricing from "./pages/SpotPricing";
 import SpotPricingList from "./pages/SpotPricingList";
+import BookingListDomestic from "./pages/BookingListDomestic";
+import BookingListExport from "./pages/BookingListExport";
+import BookingListImport from "./pages/BookingListImport";
 
 const App = () => {
   return (
@@ -67,6 +70,10 @@ const App = () => {
           />
           <Route path="/spot-pricing-enquiry" element={<SpotPricing />} />
           <Route path="/spot-pricing-list" element={<SpotPricingList />} />
+
+          <Route path="/bookings/domestic" element={<BookingListDomestic />} />
+          <Route path="/bookings/export" element={<BookingListExport />} />
+          <Route path="/bookings/import" element={<BookingListImport />} />
         </Route>
       </Routes>
     </Router>

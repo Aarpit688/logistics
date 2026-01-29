@@ -2,7 +2,7 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL:
-    import.meta.env.VITE_API_URL || "https://logistics-bnqu.onrender.com",
+    import.meta.env.VITE_API_BASE_URL || "https://logistics-bnqu.onrender.com",
 });
 
 api.interceptors.request.use((config) => {

@@ -22,12 +22,16 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [bookingsOpen, setBookingsOpen] = useState(false);
   const location = useLocation();
 
   // Auto-open Accounts if inside accounts route
   useEffect(() => {
     if (location.pathname.startsWith("/accounts")) {
       setAccountsOpen(true);
+    }
+    if (location.pathname.startsWith("/bookings")) {
+      setBookingsOpen(true);
     }
   }, [location.pathname]);
 
@@ -39,13 +43,10 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
      }`;
 
-  const itemHover =
-    "hover:translate-x-1 hover:shadow-sm transition-all duration-200";
-
   return (
     <aside
       className={`fixed md:static z-50 w-64 min-w-64 bg-white border-r h-screen flex flex-col transform transition-transform duration-300
-  ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+      ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
     >
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-6 border-b">
@@ -57,7 +58,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto overscroll-contain  scrollbar-hide">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto scrollbar-hide">
         <NavLink to="/dashboard" end className={navLinkClass}>
           <LayoutDashboard className="w-5 h-5" />
           Dashboard
@@ -83,15 +84,81 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           Volumetric Weight Calculator
         </NavLink>
 
-        <NavLink to="/export-bookings-list" className={navLinkClass}>
-          <Upload className="w-5 h-5" />
-          Export Bookings List
-        </NavLink>
+        {/* BOOKINGS DROPDOWN */}
+        <button
+          onClick={() => setBookingsOpen((p) => !p)}
+          className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-md transition-all
+          ${
+            bookingsOpen
+              ? "bg-gray-100 text-gray-900"
+              : "text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          <ClipboardList className="w-5 h-5" />
+          Bookings List
+          <motion.span
+            animate={{ rotate: bookingsOpen ? 180 : 0 }}
+            transition={{ duration: 0.25 }}
+            className="ml-auto"
+          >
+            <ChevronDown className="w-5 h-5" />
+          </motion.span>
+        </button>
 
-        <NavLink to="/import-bookings-list" className={navLinkClass}>
-          <Download className="w-5 h-5" />
-          Import Bookings List
-        </NavLink>
+        <AnimatePresence>
+          {bookingsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden"
+            >
+              <motion.div
+                className="ml-9 mt-1 space-y-1"
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  visible: {
+                    transition: { staggerChildren: 0.06 },
+                  },
+                }}
+              >
+                {[
+                  {
+                    to: "/bookings/domestic",
+                    label: "Domestic",
+                    icon: Box,
+                  },
+                  {
+                    to: "/bookings/export",
+                    label: "Export",
+                    icon: Upload,
+                  },
+                  {
+                    to: "/bookings/import",
+                    label: "Import",
+                    icon: Download,
+                  },
+                ].map((item) => (
+                  <motion.div
+                    key={item.to}
+                    variants={{
+                      hidden: { x: 20, opacity: 0 },
+                      visible: { x: 0, opacity: 1 },
+                    }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <NavLink to={item.to} className={navLinkClass}>
+                      <item.icon className="w-5 h-5" />
+                      {item.label}
+                    </NavLink>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ACCOUNTS DROPDOWN */}
         <button
@@ -114,7 +181,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           </motion.span>
         </button>
 
-        {/* Animated Dropdown */}
         <AnimatePresence>
           {accountsOpen && (
             <motion.div
@@ -124,50 +190,22 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
               transition={{ duration: 0.25 }}
               className="overflow-hidden"
             >
-              <motion.div
-                initial="hidden"
-                animate="visible"
-                variants={{
-                  hidden: {},
-                  visible: {
-                    transition: {
-                      staggerChildren: 0.06,
-                    },
-                  },
-                }}
-                className="ml-9 mt-1 space-y-1"
-              >
-                {[
-                  {
-                    to: "/accounts/invoice-download",
-                    label: "Invoice Download",
-                    icon: FileDown,
-                  },
-                  {
-                    to: "/accounts/logger",
-                    label: "Logger",
-                    icon: ScrollText,
-                  },
-                  {
-                    to: "/accounts/wallet-history",
-                    label: "Wallet Recharge History",
-                    icon: Wallet,
-                  },
-                ].map((item) => (
-                  <motion.div
-                    key={item.to}
-                    variants={{
-                      hidden: { x: 20, opacity: 0 },
-                      visible: { x: 0, opacity: 1 },
-                    }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <NavLink to={item.to} className={navLinkClass}>
-                      <item.icon className="w-5 h-5" />
-                      {item.label}
-                    </NavLink>
-                  </motion.div>
-                ))}
+              <motion.div className="ml-9 mt-1 space-y-1">
+                <NavLink
+                  to="/accounts/invoice-download"
+                  className={navLinkClass}
+                >
+                  <FileDown className="w-5 h-5" />
+                  Invoice Download
+                </NavLink>
+                <NavLink to="/accounts/logger" className={navLinkClass}>
+                  <ScrollText className="w-5 h-5" />
+                  Logger
+                </NavLink>
+                <NavLink to="/accounts/wallet-history" className={navLinkClass}>
+                  <Wallet className="w-5 h-5" />
+                  Wallet Recharge History
+                </NavLink>
               </motion.div>
             </motion.div>
           )}
