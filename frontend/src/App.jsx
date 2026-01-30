@@ -17,6 +17,7 @@ import SpotPricingList from "./pages/SpotPricingList";
 import BookingListDomestic from "./pages/BookingListDomestic";
 import BookingListExport from "./pages/BookingListExport";
 import BookingListImport from "./pages/BookingListImport";
+import WalletPage from "./pages/WalletPage";
 
 const App = () => {
   return (
@@ -74,6 +75,7 @@ const App = () => {
           <Route path="/bookings/domestic" element={<BookingListDomestic />} />
           <Route path="/bookings/export" element={<BookingListExport />} />
           <Route path="/bookings/import" element={<BookingListImport />} />
+          <Route path="/wallet" element={<WalletPage />} />
         </Route>
       </Routes>
     </Router>

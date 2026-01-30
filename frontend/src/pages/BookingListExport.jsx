@@ -1,51 +1,36 @@
 import React, { useEffect, useState } from "react";
 import {
   Loader2,
-  Search,
-  Eye,
-  X,
+  ChevronDown,
+  ChevronUp,
   FileText,
-  Mail,
-  MessageCircle,
-  RefreshCcw,
+  Download,
+  X,
+  Paperclip,
+  Printer,
+  Scale,
+  CreditCard,
+  Globe,
+  Package,
   Box,
 } from "lucide-react";
-
 import { API_BASE_URL } from "../config/api";
 
 export default function BookingListExport() {
-  /* ===========================
-     1. Date Defaults
-  ============================ */
-  const getToday = () => new Date().toISOString().split("T")[0];
-  const getOneMonthAgo = () => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().split("T")[0];
-  };
-
   const [shipments, setShipments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [priceBreakupItem, setPriceBreakupItem] = useState(null);
 
   // Filters
-  const [fromDate, setFromDate] = useState(getOneMonthAgo());
-  const [toDate, setToDate] = useState(getToday());
+  const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-
-  // Modal State
-  const [selectedShipment, setSelectedShipment] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const token = localStorage.getItem("token");
 
-  /* ===========================
-     2. FETCH SHIPMENTS
-  ============================ */
   const fetchShipments = async () => {
     try {
       setLoading(true);
-
       const res = await fetch(`${API_BASE_URL}/api/auth/shipment-list`, {
         method: "POST",
         headers: {
@@ -54,17 +39,10 @@ export default function BookingListExport() {
         },
         body: JSON.stringify({}),
       });
-
       const json = await res.json();
-
-      if (json.statusCode === 200 && Array.isArray(json.data)) {
-        setShipments(json.data);
-      } else {
-        setShipments([]);
-      }
+      if (json.statusCode === 200) setShipments(json.data);
     } catch (error) {
       console.error("Fetch error:", error);
-      setShipments([]);
     } finally {
       setLoading(false);
     }
@@ -72,445 +50,776 @@ export default function BookingListExport() {
 
   useEffect(() => {
     fetchShipments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ===========================
-     3. FILTER LOGIC
-  ============================ */
+  const toggleRow = (id) => {
+    setExpandedRow(expandedRow === id ? null : id);
+  };
+
+  // Helper: Handle File Download
+  const handleDownload = async (filePath, fileName) => {
+    try {
+      // Construct full URL (adjust if your API serves files differently)
+      const fileUrl = `${API_BASE_URL}/${filePath}`;
+
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName || "document";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download failed:", error);
+      alert("Failed to download document. Please try again.");
+    }
+  };
+
   const filteredData = shipments.filter((item) => {
     const search = searchTerm.toLowerCase();
-    const matchSearch =
-      item.booking_id?.toLowerCase().includes(search) ||
-      item.vendor_name?.toLowerCase().includes(search) ||
-      item.tracking_number?.toLowerCase().includes(search);
-
-    const matchStatus = !statusFilter || item.tracking_status === statusFilter;
-
-    const itemDate = new Date(item.created_at).toISOString().split("T")[0];
-    const matchDate = itemDate >= fromDate && itemDate <= toDate;
-
-    return matchSearch && matchStatus && matchDate;
+    return (
+      item.bookingId?.toLowerCase().includes(search) ||
+      item.selectedVendor?.vendorCode?.toLowerCase().includes(search) ||
+      item.addresses?.receiver?.companyName?.toLowerCase().includes(search)
+    );
   });
-
-  const handleReset = () => {
-    setSearchTerm("");
-    setStatusFilter("");
-    setFromDate(getOneMonthAgo());
-    setToDate(getToday());
-  };
-
-  const handleOpenModal = (shipment) => {
-    setSelectedShipment(shipment);
-    setIsModalOpen(true);
-  };
 
   return (
     <div
-      className={`lg:w-[calc(100vw-20rem)] w-[calc(100vw-3rem)] overflow-x-hidden max-w-full overflow-hidden`}
+      className={`p-6 bg-gray-50 min-h-screen lg:w-[calc(100vw-20rem)] w-[calc(100vw-3rem)] overflow-x-hidden`}
     >
-      <div className="bg-white rounded-xl shadow p-4 sm:p-6">
+      <div className="max-w-[1800px] mx-auto">
         {/* HEADER & FILTERS */}
-        <div className="mb-6 flex flex-col gap-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-800">
-              Booking List
-            </h2>
-
-            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
-              <button
-                onClick={handleReset}
-                className="bg-red-500 hover:bg-red-600 text-white font-semibold px-6 py-2 rounded-lg shadow w-full sm:w-auto"
-              >
-                Reset Filters
-              </button>
-            </div>
+        <div className="mb-6 flex flex-col md:flex-row justify-between items-end gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+              Export Bookings
+            </h1>
+            <p className="text-sm text-gray-500">
+              Manage your shipments and documents
+            </p>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-white"
-            >
-              <option value="">All Status</option>
-              <option value="OPEN">OPEN</option>
-              <option value="CLOSED">CLOSED</option>
-              <option value="PENDING">PENDING</option>
-            </select>
+          <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Search ID, Vendor, Tracking"
-              value={searchTerm}
+              placeholder="Search Booking ID, Company..."
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-black outline-none w-64 shadow-sm"
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
             />
+            <select
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm bg-white shadow-sm outline-none cursor-pointer"
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All Status</option>
+              <option value="OPEN">Open</option>
+              <option value="PENDING">Pending</option>
+              <option value="DISPATCHED">Dispatched</option>
+            </select>
           </div>
         </div>
 
-        {/* TABLE */}
-        <div className="relative rounded-lg border border-gray-200 overflow-hidden">
+        {/* MAIN TABLE */}
+        <div className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-[1800px] w-full border-collapse text-sm">
-              <thead className="bg-black text-white sticky top-0 z-10">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-[11px] tracking-wider border-b border-gray-300">
                 <tr>
-                  {[
-                    "SR.NO.",
-                    "BOOKING DATE",
-                    "VENDOR NAME",
-                    "AWB NO.",
-                    "SKART AWB NO.",
-                    "ORIGIN",
-                    "DESTINATION",
-                    "SHIPMENT TYPE",
-                    "AMOUNT (₹)",
-                    "LAST TRACKING STATUS",
-                    "AWB LABEL",
-                    "ACTION",
-                    "CONTACT",
-                  ].map((header) => (
-                    <th
-                      key={header}
-                      className="border border-gray-800 px-3 sm:px-4 py-3 whitespace-nowrap text-xs sm:text-sm"
-                    >
-                      {header}
-                    </th>
-                  ))}
+                  <th className="px-4 py-4 border-r border-gray-200 w-16 text-center">
+                    S.No
+                  </th>
+                  <th className="px-4 py-4 border-r border-gray-200">
+                    Booking Date & Time
+                  </th>
+                  <th className="px-4 py-4 border-r border-gray-200">Vendor</th>
+                  <th className="px-4 py-4 border-r border-gray-200">
+                    AWB (Booking ID)
+                  </th>
+                  <th className="px-4 py-4 border-r border-gray-200">
+                    Vendor AWB
+                  </th>
+                  <th className="px-4 py-4 border-r border-gray-200">
+                    Destination
+                  </th>
+                  {/* UPDATED COLUMNS */}
+                  <th className="px-4 py-4 border-r border-gray-200 text-right">
+                    Charg. Wt.
+                  </th>
+                  <th className="px-4 py-4 border-r border-gray-200 text-right">
+                    Amount
+                  </th>
+                  <th className="px-4 py-4 border-r border-gray-200 text-center">
+                    Status
+                  </th>
+                  <th className="px-4 py-4 text-center">AWB Label</th>
                 </tr>
               </thead>
-
-              <tbody>
+              <tbody className="divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan="15" className="p-10 text-center">
-                      <div className="flex flex-col items-center justify-center text-gray-500">
-                        <Loader2 className="h-8 w-8 animate-spin mb-2" />
-                        <span>Loading Shipments...</span>
-                      </div>
+                    <td colSpan="10" className="p-10 text-center text-gray-500">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                      Loading Data...
                     </td>
                   </tr>
                 ) : filteredData.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="15"
-                      className="text-center py-10 text-gray-500"
+                      colSpan="10"
+                      className="p-10 text-center text-gray-500 italic"
                     >
-                      No records found within this date range.
+                      No records found.
                     </td>
                   </tr>
                 ) : (
-                  filteredData.map((row, idx) => (
-                    <tr
-                      key={row.booking_id || idx}
-                      className="text-gray-800 hover:bg-gray-50 transition"
-                    >
-                      <td className="border px-3 sm:px-4 py-3 text-center font-bold left-0 bg-white z-[1] border-gray-200">
-                        {idx + 1}.
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center border-gray-200 whitespace-nowrap">
-                        <div className="flex flex-col">
-                          <span>
-                            {new Date(row.created_at).toLocaleDateString(
+                  filteredData.map((item, idx) => (
+                    <React.Fragment key={item._id}>
+                      {/* COLLAPSED ROW */}
+                      <tr
+                        className={`hover:bg-blue-50/50 transition-colors cursor-pointer group ${expandedRow === item._id ? "bg-blue-50/30" : "bg-white"}`}
+                        onClick={() => toggleRow(item._id)}
+                      >
+                        <td className="px-6 py-4 text-center font-medium text-gray-500 border-r border-gray-100">
+                          {idx + 1}
+                        </td>
+
+                        {/* 1. UPDATED TIME FORMAT */}
+                        <td className="px-6 py-4 border-r border-gray-100">
+                          <div className="font-bold text-gray-900">
+                            {new Date(item.createdAt).toLocaleDateString(
                               "en-GB",
                             )}
+                          </div>
+                          <div className="text-xs text-gray-400 font-mono mt-0.5">
+                            {new Date(item.createdAt).toLocaleTimeString(
+                              "en-US",
+                              {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: true,
+                              },
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 font-bold text-gray-800 uppercase border-r border-gray-100">
+                          {item.selectedVendor?.vendorCode || "N/A"}
+                        </td>
+
+                        <td className="px-6 py-4 font-mono font-bold text-blue-600 border-r border-gray-100">
+                          {item.bookingId}
+                        </td>
+
+                        <td className="px-6 py-4 text-gray-400 font-mono border-r border-gray-100 italic">
+                          {item.vendorAwb || "Pending"}
+                        </td>
+
+                        <td className="px-6 py-4 font-medium text-gray-700 uppercase border-r border-gray-100">
+                          {item.addresses?.receiver?.city},{" "}
+                          {item.addresses?.receiver?.country}
+                        </td>
+
+                        {/* 2. ADDED CHARGEABLE WEIGHT & PRICE */}
+                        <td className="px-4 py-4 text-right font-bold text-gray-800 border-r border-gray-100">
+                          {item.weights?.chargeableWeight} KG
+                        </td>
+
+                        <td className="px-6 py-4 text-right font-bold text-gray-900 border-r border-gray-100">
+                          ₹
+                          {Number(
+                            item.selectedVendor?.totalPrice,
+                          ).toLocaleString()}
+                        </td>
+
+                        <td className="px-6 py-4 text-center border-r border-gray-100">
+                          <span
+                            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              item.status === "OPEN"
+                                ? "bg-green-100 text-green-700"
+                                : item.status === "PENDING"
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {item.status}
                           </span>
-                          <span className="text-xs text-gray-400 mt-0.5">
-                            {new Date(row.created_at).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center font-semibold border-gray-200 whitespace-nowrap">
-                        {row.vendor_name || "-"}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center text-yellow-600 font-bold underline border-gray-200 whitespace-nowrap cursor-pointer">
-                        {row.tracking_number || "-"}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center font-mono text-xs border-gray-200 whitespace-nowrap">
-                        {row.skart_awb || row.booking_id}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center uppercase border-gray-200 whitespace-nowrap">
-                        {row.origin_city || "-"}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center uppercase border-gray-200 whitespace-nowrap">
-                        {row.destination_city || "-"}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center border-gray-200 whitespace-nowrap">
-                        {row.shipment_type || "-"}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-right font-bold border-gray-200 whitespace-nowrap">
-                        {Number(row.grand_total).toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center border-gray-200 min-w-[200px]">
-                        <span className="text-sm font-bold text-gray-700">
-                          {row.tracking_status || "Processing"}
-                        </span>
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center border-gray-200">
-                        <button className="text-yellow-600 hover:text-yellow-700 mx-auto">
-                          <FileText size={20} />
-                        </button>
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center border-gray-200">
-                        <button
-                          onClick={() => handleOpenModal(row)}
-                          className="text-yellow-600 hover:text-yellow-700 p-1 rounded-full hover:bg-yellow-50 transition"
-                        >
-                          <Eye size={20} />
-                        </button>
-                      </td>
-                      <td className="border px-3 sm:px-4 py-3 text-center border-gray-200">
-                        <div className="flex items-center justify-center gap-2">
-                          <button className="text-yellow-600 hover:text-yellow-700">
-                            <Mail size={18} />
-                          </button>
-                          <button className="text-yellow-600 hover:text-yellow-700">
-                            <MessageCircle size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+
+                        {/* 3. AWB LABEL ACTION */}
+                        <td className="px-6 py-4 text-center text-gray-400 flex items-center justify-center gap-4">
+                          <div
+                            className="group/icon relative"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <FileText
+                              size={18}
+                              className="text-gray-400 hover:text-blue-600 cursor-not-allowed"
+                            />
+                            <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/icon:opacity-100 transition whitespace-nowrap">
+                              Uploaded by Admin later
+                            </span>
+                          </div>
+                          {expandedRow === item._id ? (
+                            <ChevronUp size={18} />
+                          ) : (
+                            <ChevronDown size={18} />
+                          )}
+                        </td>
+                      </tr>
+
+                      {/* EXPANDED DETAILS ROW */}
+                      {expandedRow === item._id && (
+                        <tr>
+                          <td
+                            colSpan="10"
+                            className="bg-gray-50 p-6 border-y border-gray-200 shadow-inner"
+                          >
+                            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                              {/* 4. REMOVED VOLUMETRIC CARD, KEPT OTHERS */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                  <div>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">
+                                      Chargeable Weight
+                                    </p>
+                                    <p className="text-2xl font-black text-gray-900">
+                                      {item.weights?.chargeableWeight}{" "}
+                                      <span className="text-sm text-gray-500">
+                                        KG
+                                      </span>
+                                    </p>
+                                  </div>
+                                  <Scale
+                                    className="text-blue-500 opacity-20"
+                                    size={32}
+                                  />
+                                </div>
+
+                                <div
+                                  className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 shadow-sm flex items-center justify-between cursor-pointer hover:bg-yellow-100 transition"
+                                  onClick={() => setPriceBreakupItem(item)}
+                                >
+                                  <div>
+                                    <p className="text-[10px] text-yellow-800 font-bold uppercase mb-1">
+                                      Total Amount
+                                    </p>
+                                    <p className="text-2xl font-black text-gray-900">
+                                      ₹
+                                      {Number(
+                                        item.selectedVendor?.totalPrice,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-blue-600 underline">
+                                      View Breakup
+                                    </p>
+                                  </div>
+                                  <CreditCard
+                                    className="text-yellow-600 opacity-30"
+                                    size={32}
+                                  />
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center">
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-500">
+                                      Service:
+                                    </span>
+                                    <span className="font-bold">
+                                      {item.shipment?.shipmentMainType}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-500">
+                                      Category:
+                                    </span>
+                                    <span className="font-bold">
+                                      {item.shipment?.nonDocCategory}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs mt-1">
+                                    <span className="text-gray-500">
+                                      Total Boxes:
+                                    </span>
+                                    <span className="font-bold">
+                                      {item.boxes?.rows?.length || 0}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 5. & 6. UPDATED SENDER & RECEIVER INFO */}
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                                {/* Sender Table */}
+                                <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                                  <div className="bg-blue-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                    <h4 className="font-bold text-blue-800 text-xs uppercase">
+                                      Sender Information
+                                    </h4>
+                                    <span className="text-[10px] text-blue-600 font-mono bg-blue-100 px-2 rounded">
+                                      Origin: {item.shipment?.originCity} (
+                                      {item.shipment?.originPincode})
+                                    </span>
+                                  </div>
+                                  <div className="p-4 grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+                                    <div className="col-span-2 sm:col-span-1">
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Company / Name
+                                      </p>
+                                      <p className="font-bold text-gray-900">
+                                        {item.addresses?.sender?.companyName ||
+                                          item.addresses?.sender?.name}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Contact Info
+                                      </p>
+                                      <p className="text-gray-600 text-xs">
+                                        {item.addresses?.sender?.contactNumber}
+                                      </p>
+                                      <p
+                                        className="text-gray-600 text-xs truncate"
+                                        title={item.addresses?.sender?.email}
+                                      >
+                                        {item.addresses?.sender?.email}
+                                      </p>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Address
+                                      </p>
+                                      <p className="text-gray-600 text-xs leading-relaxed">
+                                        {item.addresses?.sender?.addressLine1}{" "}
+                                        {item.addresses?.sender?.addressLine2}
+                                      </p>
+                                    </div>
+                                    {/* Added Missing Sender Fields */}
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Tax / IEC
+                                      </p>
+                                      <p className="text-gray-700 font-mono text-xs">
+                                        {item.addresses?.sender?.iecNo || "N/A"}{" "}
+                                        <span className="text-gray-400">|</span>{" "}
+                                        {item.addresses?.sender?.kycNo}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Tax Payment
+                                      </p>
+                                      <p className="text-gray-700 font-mono text-xs">
+                                        {item.addresses?.sender
+                                          ?.taxPaymentOption || "N/A"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Document
+                                      </p>
+                                      <p className="text-gray-700 font-mono text-xs">
+                                        {item.addresses?.sender?.documentType}:{" "}
+                                        {item.addresses?.sender?.documentNumber}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Receiver Table */}
+                                <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                                  <div className="bg-green-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                    <h4 className="font-bold text-green-800 text-xs uppercase">
+                                      Receiver Information
+                                    </h4>
+                                    <span className="text-[10px] text-green-600 font-mono bg-green-100 px-2 rounded">
+                                      Dest: {item.shipment?.destinationCity} (
+                                      {item.shipment?.destinationZip})
+                                    </span>
+                                  </div>
+                                  <div className="p-4 grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+                                    <div className="col-span-2 sm:col-span-1">
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Company / Name
+                                      </p>
+                                      <p className="font-bold text-gray-900">
+                                        {item.addresses?.receiver
+                                          ?.companyName ||
+                                          item.addresses?.receiver?.name}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Contact Info
+                                      </p>
+                                      <p className="text-gray-600 text-xs">
+                                        {
+                                          item.addresses?.receiver
+                                            ?.contactNumber
+                                        }
+                                      </p>
+                                      <p
+                                        className="text-gray-600 text-xs truncate"
+                                        title={item.addresses?.receiver?.email}
+                                      >
+                                        {item.addresses?.receiver?.email}
+                                      </p>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Address
+                                      </p>
+                                      <p className="text-gray-600 text-xs leading-relaxed">
+                                        {item.addresses?.receiver?.addressLine1}{" "}
+                                        {item.addresses?.receiver?.addressLine2}
+                                        ,{item.addresses?.receiver?.city},{" "}
+                                        {item.addresses?.receiver?.state}
+                                        <br />
+                                        <span className="font-bold text-black">
+                                          {item.addresses?.receiver?.country}
+                                        </span>{" "}
+                                        - {item.addresses?.receiver?.zipCode}
+                                      </p>
+                                    </div>
+                                    {/* Added Missing Receiver Fields */}
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Tax / ID Type
+                                      </p>
+                                      <p className="text-gray-700 font-mono text-xs">
+                                        {item.addresses?.receiver?.idType} -{" "}
+                                        {item.addresses?.receiver?.idNumber}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Auth Doc
+                                      </p>
+                                      <p className="text-gray-700 font-mono text-xs">
+                                        {item.addresses?.receiver?.documentType}
+                                        :{" "}
+                                        {
+                                          item.addresses?.receiver
+                                            ?.documentNumber
+                                        }
+                                      </p>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">
+                                        Delivery Instructions
+                                      </p>
+                                      <p className="text-gray-600 text-xs italic bg-gray-50 p-1 rounded">
+                                        {item.addresses?.receiver
+                                          ?.deliveryInstructions ||
+                                          "None provided"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 3. EXPORT & COMMERCIAL DETAILS (Grid View) */}
+                              <div className="bg-white border border-gray-300 rounded-lg mb-6 overflow-hidden">
+                                <div className="bg-gray-100 px-4 py-2 border-b border-gray-300">
+                                  <h5 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
+                                    <Globe size={14} /> Export & Commercial
+                                    Details
+                                  </h5>
+                                </div>
+                                <div className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      Invoice Number
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.invoiceNumber}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      Invoice Date
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.invoiceDate}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      Incoterms
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.termsOfInvoice}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      Reference No
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.referenceNumber}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      Export Reason
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.exportReason}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      Bank AD Code
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.bankADCode || "-"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      LUT Number
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.lutNumber || "N/A"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-gray-400 uppercase font-bold">
+                                      LUT Issue Date
+                                    </p>
+                                    <p className="text-xs font-medium">
+                                      {item.exportDetails?.lutIssueDate || "-"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 7. & 8. ITEM TABLES WITH BOX NO & VOL WEIGHT */}
+                              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                                {/* Goods & Boxes */}
+                                <div className="xl:col-span-2 border border-gray-300 rounded-lg overflow-hidden bg-white">
+                                  <div className="bg-gray-100 px-4 py-2 border-b border-gray-300 flex justify-between">
+                                    <span className="text-xs font-bold uppercase text-gray-700 flex items-center gap-2">
+                                      <Package size={14} /> Itemized Goods
+                                      Details
+                                    </span>
+                                    <span className="text-xs font-bold uppercase text-gray-700 flex items-center gap-2">
+                                      <Box size={14} /> Box Dimensions
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-300">
+                                    {/* Goods Table */}
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-xs text-left">
+                                        <thead className="bg-gray-50 text-gray-500 font-bold uppercase border-b border-gray-200">
+                                          <tr>
+                                            <th className="px-3 py-2 text-center">
+                                              Box
+                                            </th>
+                                            <th className="px-3 py-2">Desc</th>
+                                            <th className="px-3 py-2 text-center">
+                                              HSN
+                                            </th>
+                                            <th className="px-3 py-2 text-center">
+                                              Qty
+                                            </th>
+                                            <th className="px-3 py-2 text-right">
+                                              Amt
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                          {item.goods?.rows?.map((g, i) => (
+                                            <tr key={i}>
+                                              <td className="px-3 py-2 text-center font-bold text-blue-600">
+                                                {g.boxNo || 1}
+                                              </td>
+                                              <td
+                                                className="px-3 py-2 font-medium truncate max-w-[100px]"
+                                                title={g.description}
+                                              >
+                                                {g.description}
+                                              </td>
+                                              <td className="px-3 py-2 text-center font-mono text-gray-500">
+                                                {g.hsnCode}
+                                              </td>
+                                              <td className="px-3 py-2 text-center">
+                                                {g.qty} {g.unit}
+                                              </td>
+                                              <td className="px-3 py-2 text-right font-bold">
+                                                ₹{g.amount}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+
+                                    {/* Boxes Table */}
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-xs text-left">
+                                        <thead className="bg-gray-50 text-gray-500 font-bold uppercase border-b border-gray-200">
+                                          <tr>
+                                            <th className="px-3 py-2 text-center">
+                                              #
+                                            </th>
+                                            <th className="px-3 py-2 text-center">
+                                              L x B x H
+                                            </th>
+                                            <th className="px-3 py-2 text-center">
+                                              Act. Wt
+                                            </th>
+                                            <th className="px-3 py-2 text-center">
+                                              Vol. Wt
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                          {item.boxes?.rows?.map((b, i) => (
+                                            <tr key={i}>
+                                              <td className="px-3 py-2 text-center font-bold text-gray-400">
+                                                {i + 1}
+                                              </td>
+                                              <td className="px-3 py-2 text-center">
+                                                {b.length} x {b.breadth} x{" "}
+                                                {b.height}
+                                              </td>
+                                              <td className="px-3 py-2 text-center font-bold">
+                                                {b.weight} kg
+                                              </td>
+                                              <td className="px-3 py-2 text-center text-gray-400">
+                                                {(
+                                                  (b.length *
+                                                    b.breadth *
+                                                    b.height) /
+                                                  5000
+                                                ).toFixed(2)}{" "}
+                                                kg
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* 9. DOCUMENTS & ACTIONS (Working Links) */}
+                                <div className="flex flex-col gap-4">
+                                  <div className="bg-white border border-gray-300 rounded-lg p-4 flex-1">
+                                    <h5 className="font-bold text-gray-800 text-xs uppercase mb-3 border-b pb-2 flex items-center gap-2">
+                                      <Paperclip size={14} /> Documents Uploaded
+                                    </h5>
+                                    {item.documents &&
+                                    item.documents.length > 0 ? (
+                                      <ul className="space-y-2">
+                                        {item.documents.map((doc, i) => (
+                                          <li
+                                            key={i}
+                                            className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded border border-gray-100 text-xs"
+                                          >
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                              <FileText
+                                                size={12}
+                                                className="text-blue-500 flex-shrink-0"
+                                              />
+                                              <a
+                                                href={`${API_BASE_URL}/${doc.filePath}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="truncate max-w-[150px] hover:text-blue-600 hover:underline cursor-pointer"
+                                              >
+                                                {doc.fileName}
+                                              </a>
+                                            </div>
+                                            <button
+                                              className="text-gray-400 hover:text-black"
+                                              onClick={() =>
+                                                handleDownload(
+                                                  doc.filePath,
+                                                  doc.fileName,
+                                                )
+                                              }
+                                              title="Download File"
+                                            >
+                                              <Download size={14} />
+                                            </button>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="text-xs text-gray-400 italic py-2">
+                                        No documents.
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <button className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-black text-white px-4 py-3 rounded hover:bg-gray-800 transition">
+                                    <Printer size={14} /> Print AWB Label
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))
                 )}
               </tbody>
             </table>
           </div>
         </div>
-
-        {/* FOOTER */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 text-gray-600 text-sm">
-          <span>
-            Showing {filteredData.length} of {shipments.length} Records
-          </span>
-        </div>
       </div>
 
-      {/* ✅ DETAILS MODAL - UPDATED TABLE STRUCTURE */}
-      {isModalOpen && selectedShipment && (
+      {/* PRICE BREAKUP MODAL */}
+      {priceBreakupItem && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={() => setIsModalOpen(false)}
+          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setPriceBreakupItem(null)}
         >
           <div
-            className="w-full max-w-5xl bg-white rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+            className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden animate-in zoom-in duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between bg-black px-6 py-4 text-white">
-              <div>
-                <h3 className="text-lg font-bold">Shipment Details</h3>
-                <p className="text-xs text-gray-400 mt-1 font-mono">
-                  ID: {selectedShipment.booking_id}
-                </p>
-              </div>
+            <div className="bg-yellow-400 p-4 flex justify-between items-center">
+              <h3 className="font-black text-lg text-black uppercase">
+                Price Breakdown
+              </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-md hover:bg-white/20 transition"
+                onClick={() => setPriceBreakupItem(null)}
+                className="p-1 hover:bg-white/20 rounded"
               >
-                <X className="h-6 w-6" />
+                <X size={20} />
               </button>
             </div>
-
-            {/* Modal Content */}
-            <div className="p-6 max-h-[80vh] overflow-y-auto">
-              {/* Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                <div className="bg-blue-50 p-4 rounded-md border border-blue-100 flex justify-between items-center">
-                  <span className="text-blue-800 text-sm font-bold uppercase">
-                    Total Charged Weight
-                  </span>
-                  <span className="font-extrabold text-blue-900 text-xl">
-                    {selectedShipment.charged_weight}{" "}
-                    <span className="text-sm">kg</span>
-                  </span>
-                </div>
-                <div className="bg-yellow-50 p-4 rounded-md border border-yellow-100 flex justify-between items-center">
-                  <span className="text-yellow-800 text-sm font-bold uppercase">
-                    Vendor Selected
-                  </span>
-                  <span className="font-extrabold text-yellow-900 text-lg">
-                    {selectedShipment.vendor_name}
-                  </span>
-                </div>
-              </div>
-
-              {/* ✅ 1. Box Dimensions Table */}
-              <div className="mb-10">
-                <h4 className="flex items-center gap-2 text-sm font-extrabold text-gray-900 uppercase tracking-wide mb-4 pb-2 border-b border-gray-200">
-                  <RefreshCcw className="h-4 w-4" /> Box Dimensions & Weights
-                </h4>
-
-                {selectedShipment.boxes?.rows?.length > 0 ? (
-                  <div className="overflow-hidden border border-gray-300 rounded-md">
-                    <table className="w-full text-sm text-left border-collapse">
-                      <thead className="bg-gray-100 text-xs uppercase font-bold text-gray-700">
-                        <tr>
-                          <th className="px-4 py-3 border border-gray-300 w-16 text-center">
-                            #
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Qty
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Length (cm)
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Breadth (cm)
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Height (cm)
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Actual Wt (kg)
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Volumetric Wt (kg)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-300">
-                        {selectedShipment.boxes.rows.map((box, i) => {
-                          // Calculate Volumetric Weight for display (L*B*H / 5000)
-                          const volWt = (
-                            (box.length * box.breadth * box.height) /
-                            5000
-                          ).toFixed(2);
-                          return (
-                            <tr key={i} className="hover:bg-gray-50">
-                              <td className="px-4 py-2 border border-gray-300 font-bold text-center">
-                                {i + 1}
-                              </td>
-                              <td className="px-4 py-2 border border-gray-300 text-center">
-                                {box.qty}
-                              </td>
-                              <td className="px-4 py-2 border border-gray-300 text-center">
-                                {box.length}
-                              </td>
-                              <td className="px-4 py-2 border border-gray-300 text-center">
-                                {box.breadth}
-                              </td>
-                              <td className="px-4 py-2 border border-gray-300 text-center">
-                                {box.height}
-                              </td>
-                              <td className="px-4 py-2 border border-gray-300 text-center font-bold">
-                                {box.weight}
-                              </td>
-                              <td className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                {volWt}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+            <div className="p-6 space-y-3">
+              {priceBreakupItem.selectedVendor?.breakup?.map(
+                (charge, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span className="text-gray-600 uppercase text-xs font-bold">
+                      {charge.label}
+                    </span>
+                    <span className="font-bold">
+                      ₹{Number(charge.amount).toLocaleString()}
+                    </span>
                   </div>
-                ) : (
-                  <p className="text-sm text-gray-500 italic p-4 bg-gray-50 rounded border border-dashed border-gray-300 text-center">
-                    No box dimension details found for this shipment.
-                  </p>
-                )}
+                ),
+              )}
+
+              <div className="border-t border-dashed border-gray-300 my-2"></div>
+              <div className="flex justify-between text-lg font-black text-black">
+                <span>Grand Total</span>
+                <span>
+                  ₹
+                  {Number(
+                    priceBreakupItem.selectedVendor?.totalPrice || 0,
+                  ).toLocaleString()}
+                </span>
               </div>
-
-              {/* ✅ 2. Shipment Contents Table (Full Details) */}
-              <div>
-                <h4 className="flex items-center gap-2 text-sm font-extrabold text-gray-900 uppercase tracking-wide mb-4 pb-2 border-b border-gray-200">
-                  <Box className="h-4 w-4" /> Shipment Contents / Invoice
-                  Details
-                </h4>
-
-                {selectedShipment.goods?.rows?.length > 0 ? (
-                  <div className="overflow-hidden border border-gray-300 rounded-md">
-                    <table className="w-full text-sm text-left border-collapse">
-                      <thead className="bg-gray-100 text-xs uppercase font-bold text-gray-700">
-                        <tr>
-                          <th className="px-4 py-3 border border-gray-300 w-16 text-center">
-                            #
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300">
-                            Description
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            HSN Code
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Unit
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-center">
-                            Qty
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-right">
-                            Rate (₹)
-                          </th>
-                          <th className="px-4 py-3 border border-gray-300 text-right">
-                            Amount (₹)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-300">
-                        {selectedShipment.goods.rows.map((item, i) => (
-                          <tr key={i} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 border border-gray-300 text-center font-bold">
-                              {i + 1}
-                            </td>
-                            <td className="px-4 py-2 border border-gray-300 font-medium text-gray-900">
-                              {item.description || "-"}
-                            </td>
-                            <td className="px-4 py-2 border border-gray-300 text-center font-mono text-xs">
-                              {item.hsnCode || "-"}
-                            </td>
-                            <td className="px-4 py-2 border border-gray-300 text-center text-xs bg-gray-50">
-                              {item.unit || "PCS"}
-                            </td>
-                            <td className="px-4 py-2 border border-gray-300 text-center font-bold">
-                              {item.qty || 0}
-                            </td>
-                            <td className="px-4 py-2 border border-gray-300 text-right text-gray-600">
-                              {item.rate
-                                ? Number(item.rate).toFixed(2)
-                                : "0.00"}
-                            </td>
-                            <td className="px-4 py-2 border border-gray-300 text-right font-bold text-gray-900">
-                              {item.amount
-                                ? Number(item.amount).toFixed(2)
-                                : "0.00"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500 italic p-4 bg-gray-50 rounded border border-dashed border-gray-300 text-center">
-                    No content details found for this shipment.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t border-gray-200">
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="px-6 py-2 bg-black text-white text-sm font-bold rounded hover:bg-gray-800 transition shadow-sm"
-              >
-                Close Details
-              </button>
             </div>
           </div>
         </div>

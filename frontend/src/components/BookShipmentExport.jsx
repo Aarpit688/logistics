@@ -11,6 +11,7 @@ import {
   calcChargeableWeight,
 } from "../utils/rateEngine";
 import { API_BASE_URL } from "../config/api";
+import { useNavigate } from "react-router-dom";
 
 /** ✅ final backend payload optimizer (EXPORT) */
 function buildExportBookingPayload(data) {
@@ -187,6 +188,8 @@ export default function BookShipmentExport({
   onNext,
   onBack,
 }) {
+  const navigate = useNavigate();
+
   const [rates, setRates] = useState([]);
   const [loadingRates, setLoadingRates] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
@@ -294,7 +297,6 @@ export default function BookShipmentExport({
     onNext?.();
   };
 
-  /** ✅ Final Submit - Updated to use FormData */
   const finalSubmit = async () => {
     try {
       setIsBooking(true);
@@ -311,6 +313,11 @@ export default function BookShipmentExport({
         apiResponse: response,
         success: response.statusCode === 200,
       });
+      if (response?.statusCode === 200) {
+        // ✅ Redirect to booking list (fresh load)
+        navigate("/bookings/export", { replace: true });
+        return;
+      }
     } catch (e) {
       console.error("Booking Error", e);
       alert("Booking Failed. Check console.");
