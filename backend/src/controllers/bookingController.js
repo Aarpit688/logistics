@@ -8,6 +8,9 @@ const generateBookingId = () => {
 /* =========================================
    CREATE BOOKING
 ========================================= */
+/* =========================================
+   CREATE BOOKING (Updated)
+========================================= */
 export const createBooking = async (req, res) => {
   try {
     if (!req.body.payload) {
@@ -17,17 +20,29 @@ export const createBooking = async (req, res) => {
     const payloadData = JSON.parse(req.body.payload);
     const uploadedFiles = req.files;
 
-    // 1. Map Files
+    // 1. Map Files with Correct Paths & Names
     if (uploadedFiles && uploadedFiles.length > 0 && payloadData.documents) {
       payloadData.documents = payloadData.documents.map((doc, index) => {
         const file = uploadedFiles.find(
           (f) => f.fieldname === `documents[${index}]`,
         );
+
         if (file) {
+          // ✅ 1. Generate Clean Filename based on Doc Type
+          const extension = file.originalname.split(".").pop();
+          // If type is "OTHER", use the custom name, otherwise use the type (e.g., "PAN", "GST")
+          const docName =
+            doc.type === "OTHER"
+              ? (doc.otherName || "Document").replace(/\s+/g, "_") // Replace spaces with underscores
+              : doc.type;
+
+          const finalFileName = `${docName}.${extension}`;
+
           return {
             ...doc,
-            fileName: file.originalname,
-            filePath: file.path,
+            fileName: finalFileName, // <--- New clean name
+            // ✅ 2. Fix Path for Browser (Convert '\' to '/')
+            filePath: file.path.replace(/\\/g, "/"),
             mimeType: file.mimetype,
           };
         }
@@ -35,7 +50,7 @@ export const createBooking = async (req, res) => {
       });
     }
 
-    // 2. Determine User ID (Fallback to "USER_123" if auth fails/is missing during dev)
+    // 2. Determine User ID
     const userId = req.user ? req.user._id : "USER_123";
 
     // 3. Create Record
@@ -43,7 +58,7 @@ export const createBooking = async (req, res) => {
       ...payloadData,
       bookingId: generateBookingId(),
       userId: userId,
-      status: "OPEN",
+      status: "PENDING",
     });
 
     await newBooking.save();
