@@ -1,30 +1,28 @@
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
+import dotenv from "dotenv";
 
-// ✅ Define paths
-const msmeUploadPath = "uploads/msme";
-const bookingUploadPath = "uploads/bookings";
+dotenv.config();
 
-// ✅ Ensure both folders exist
-if (!fs.existsSync(msmeUploadPath)) {
-  fs.mkdirSync(msmeUploadPath, { recursive: true });
-}
-
-if (!fs.existsSync(bookingUploadPath)) {
-  fs.mkdirSync(bookingUploadPath, { recursive: true });
-}
+// 1. Configure Cloudinary with credentials from .env
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 /* ===========================
    1. MSME STORAGE CONFIG
+   (Saves to 'logistics_msme' folder in Cloudinary)
 =========================== */
-const msmeStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, msmeUploadPath); // Goes to uploads/msme
-  },
-  filename: function (req, file, cb) {
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
+const msmeStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "logistics_msme",
+    allowed_formats: ["jpg", "png", "jpeg", "pdf"],
+    // 'auto' is required to detect if it's an image or a raw file (like PDF)
+    resource_type: "auto",
   },
 });
 
@@ -46,20 +44,25 @@ export const uploadDocuments = multer({
 
 /* ===========================
    2. BOOKING STORAGE CONFIG
+   (Updated for robust PDF handling)
 =========================== */
-const bookingStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, bookingUploadPath); // ✅ Goes to uploads/bookings
-  },
-  filename: function (req, file, cb) {
-    // Generate unique name: timestamp-random.ext
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
+const bookingStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: async (req, file) => {
+    // ⚠️ CRITICAL: Check file mimetype to determine resource_type
+    const isPdf = file.mimetype === "application/pdf";
+
+    return {
+      folder: "logistics_bookings",
+      // If PDF, use 'raw'. If image, use 'image'. 'auto' can be flaky for PDFs.
+      resource_type: isPdf ? "raw" : "image",
+      public_id: `${Date.now()}-${file.originalname.split(".")[0]}`, // Keep name clean
+      // format: isPdf ? undefined : file.mimetype.split('/')[1], // Only enforce format for images
+    };
   },
 });
 
-// ✅ Generic uploader for dynamic booking files (documents[0], documents[1] etc.)
 export const uploadBookingDocs = multer({
   storage: bookingStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 }).any();

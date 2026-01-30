@@ -726,8 +726,15 @@ export default function BookingListExport() {
                                                 size={12}
                                                 className="text-blue-500 flex-shrink-0"
                                               />
+                                              {/* ✅ FIX: Check if path is already a full URL (Cloudinary) */}
                                               <a
-                                                href={`${API_BASE_URL}/${doc.filePath}`}
+                                                href={
+                                                  doc.filePath.startsWith(
+                                                    "http",
+                                                  )
+                                                    ? doc.filePath
+                                                    : `${API_BASE_URL}/${doc.filePath}`
+                                                }
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="truncate max-w-[150px] hover:text-blue-600 hover:underline cursor-pointer"

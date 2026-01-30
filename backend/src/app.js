@@ -11,14 +11,16 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/uploads", express.static("uploads"));
+// app.use("/uploads", express.static("uploads"));
 app.use("/api", routes);
 app.use("/api/user", userRoutes);
 
 app.use((err, req, res, next) => {
+  console.error("❌ Multer/Server Error:", err);
   if (err) {
     return res.status(400).json({
       message: err.message || "File upload error",
+      error: err,
     });
   }
   next();

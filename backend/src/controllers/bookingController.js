@@ -2,25 +2,27 @@ import Booking from "../models/Booking.js";
 
 // Helper to generate a random Booking ID
 const generateBookingId = () => {
-  return "BKG" + Math.floor(100000 + Math.random() * 900000);
+  return "ACE" + Math.floor(100000 + Math.random() * 900000);
 };
 
 /* =========================================
    CREATE BOOKING
 ========================================= */
-/* =========================================
-   CREATE BOOKING (Updated)
-========================================= */
+
 export const createBooking = async (req, res) => {
   try {
     if (!req.body.payload) {
       return res.status(400).json({ message: "Missing payload data" });
     }
 
+    // 1. Determine User ID First (Needed for naming)
+    // Fallback to "USER_123" only if req.user is missing
+    const userId = req.user ? req.user._id : "USER_123";
+
     const payloadData = JSON.parse(req.body.payload);
     const uploadedFiles = req.files;
 
-    // 1. Map Files with Correct Paths & Names
+    // 2. Map Files & Apply New Naming Logic
     if (uploadedFiles && uploadedFiles.length > 0 && payloadData.documents) {
       payloadData.documents = payloadData.documents.map((doc, index) => {
         const file = uploadedFiles.find(
@@ -28,30 +30,28 @@ export const createBooking = async (req, res) => {
         );
 
         if (file) {
-          // ✅ 1. Generate Clean Filename based on Doc Type
           const extension = file.originalname.split(".").pop();
-          // If type is "OTHER", use the custom name, otherwise use the type (e.g., "PAN", "GST")
+
+          // Determine clean document name
           const docName =
             doc.type === "OTHER"
-              ? (doc.otherName || "Document").replace(/\s+/g, "_") // Replace spaces with underscores
+              ? (doc.otherName || "Document").replace(/\s+/g, "_")
               : doc.type;
 
-          const finalFileName = `${docName}.${extension}`;
+          // ✅ NEW NAMING FORMAT: userId + "_" + docName + "." + extension
+          // Example: 65a4b3c..._PAN_CARD.png
+          const finalFileName = `${userId}_${docName}.${extension}`;
 
           return {
             ...doc,
-            fileName: finalFileName, // <--- New clean name
-            // ✅ 2. Fix Path for Browser (Convert '\' to '/')
-            filePath: file.path.replace(/\\/g, "/"),
+            fileName: finalFileName, // Saved to DB for frontend display
+            filePath: file.path, // Cloudinary URL
             mimeType: file.mimetype,
           };
         }
         return doc;
       });
     }
-
-    // 2. Determine User ID
-    const userId = req.user ? req.user._id : "USER_123";
 
     // 3. Create Record
     const newBooking = new Booking({
