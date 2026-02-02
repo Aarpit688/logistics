@@ -20,6 +20,23 @@ function buildExportBookingPayload(data) {
   const addresses = data?.addresses || {};
   const selectedRate = data?.selectedRate || null;
 
+  const sender = addresses.sender || {};
+  const receiver = addresses.receiver || {};
+
+  const senderPayload = {
+    ...sender,
+    kycType: sender.documentType, // Map Document Type to KYC Type
+    kycNo: sender.documentNumber, // Map Document Number to KYC Number
+  };
+
+  const receiverPayload = {
+    ...receiver,
+    // Add the new commercial fields
+    airportCode: receiver.airportCode || "",
+    airportDestination: receiver.airportDestination || "",
+    handlingInfo: receiver.handlingInfo || "",
+  };
+
   const units = extra?.units || {};
   const exportDetails = extra?.exportDetails || {};
   const boxes = extra?.boxes || {};
@@ -85,8 +102,8 @@ function buildExportBookingPayload(data) {
       chargeableWeight: Number(chargeableWeight.toFixed(2)),
     },
     addresses: {
-      sender: addresses.sender || {},
-      receiver: addresses.receiver || {},
+      sender: senderPayload || {},
+      receiver: receiverPayload || {},
     },
     documents: docsMeta,
     selectedVendor: selectedRate

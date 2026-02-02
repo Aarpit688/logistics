@@ -87,7 +87,7 @@ const AdminFuelSurcharge = () => {
 
   /* ---------------- SAVE ---------------- */
   const saveVendor = async (row) => {
-    await fetch(`${API_BASE_URL}/${row.id}`, {
+    await fetch(`${API_BASE_URL}/api/admin/fuel-surcharge/${row.id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -114,7 +114,7 @@ const AdminFuelSurcharge = () => {
       upcoming: null,
     };
 
-    await fetch(API_BASE_URL, {
+    await fetch(`${API_BASE_URL}/api/admin/fuel-surcharge`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -130,7 +130,7 @@ const AdminFuelSurcharge = () => {
   const deleteVendor = async (id) => {
     if (!window.confirm("Delete this vendor permanently?")) return;
 
-    await fetch(`${API_BASE_URL}/${id}`, {
+    await fetch(`${API_BASE_URL}/api/admin/fuel-surcharge/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });

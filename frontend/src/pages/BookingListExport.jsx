@@ -128,7 +128,7 @@ export default function BookingListExport() {
             <table className="w-full text-sm text-left border-collapse">
               <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-[11px] tracking-wider border-b border-gray-300">
                 <tr>
-                  <th className="px-4 py-4 border-r border-gray-200 w-16 text-center">
+                  <th className="px-2 py-4 border-r border-gray-200 w-16 text-center">
                     S.No
                   </th>
                   <th className="px-4 py-4 border-r border-gray-200">
@@ -182,7 +182,7 @@ export default function BookingListExport() {
                         className={`hover:bg-blue-50/50 transition-colors cursor-pointer group ${expandedRow === item._id ? "bg-blue-50/30" : "bg-white"}`}
                         onClick={() => toggleRow(item._id)}
                       >
-                        <td className="px-6 py-4 text-center font-medium text-gray-500 border-r border-gray-100">
+                        <td className="px-1 py-4 text-center font-medium text-gray-500 border-r border-gray-100">
                           {idx + 1}
                         </td>
 

@@ -102,14 +102,23 @@ function ensureGoodsRows(count, existingRows) {
 const EXPORT_FORMATS = [
   { value: "B2B", label: "B2B" },
   { value: "B2C", label: "B2C" },
+  { value: "C2C", label: "C2C" }, // Added C2C
 ];
-const TERMS_OPTIONS = ["DDU", "DDP", "CIF", "C&F", "DAP"];
+const TERMS_OPTIONS = [
+  "CFR (Cost & Freight)",
+  "CIF (Cost, Insurance & Freight)",
+  "DDP (Delivery Duty Paid)",
+  "DDU (Delivery Duty Unpaid)",
+  "DAP (Delivered At Place)",
+  "EXW (Ex Works)",
+];
 const EXPORT_REASONS = [
-  { value: "COMMERCIAL", label: "COMMERCIAL" },
-  { value: "SAMPLE", label: "SAMPLE" },
-  { value: "GIFT", label: "GIFT" },
-  { value: "RETURN", label: "RETURN" },
-  { value: "OTHER", label: "OTHER" },
+  { value: "SAMPLE", label: "Samples Not for Sale" },
+  { value: "PERSONAL", label: "Personal Not For Resale" },
+  { value: "GIFT", label: "Bonafide Gift" },
+  { value: "SALE", label: "Sale of Goods" },
+  { value: "RETURN_REPAIR", label: "Return for Repair" },
+  { value: "RETURN_AFTER_REPAIR", label: "Return after Repair" },
 ];
 
 export default function BookShipmentExportStep2({
