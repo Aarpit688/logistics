@@ -131,9 +131,9 @@ function buildExternalBookingPayload(data) {
     pickup_address_2: sender.addressLine2 || "",
 
     // Pickup usually matches Sender Location
-    pickup_pincode: sender.pincode || sender.zipCode || sender.zip,
-    pickup_city: sender.city,
-    pickup_state: sender.state || sender.province,
+    pickup_pincode: sender.pincode || sender.zipCode || shipment.originPincode,
+    pickup_city: sender.city || shipment.originCity,
+    pickup_state: sender.state || shipment.originState,
 
     pickup_ready_start_time: "10:00 AM",
     pickup_ready_end_time: "10:00 PM",
@@ -316,17 +316,14 @@ export default function BookShipmentExport({
       }
 
       // 3. Call API
-      const response = await fetch(
-        "https://devapiv2.skart-express.com/api/v1/booking/booking-api",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            accept: "application/json",
-          },
-          body: JSON.stringify(externalPayload),
+      const response = await fetch(`/api/proxy/booking/booking-api`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
         },
-      );
+        body: JSON.stringify(externalPayload),
+      });
 
       // Handle Non-JSON responses (404/500 HTML pages)
       if (!response.ok) {
